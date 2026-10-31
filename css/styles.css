@@ -711,7 +711,8 @@ button, input, select, textarea {
   align-items: center;
   justify-content: center;
   padding: 10px 16px 14px;
-  overflow: hidden;
+  overflow: auto;
+  position: relative;
 }
 
 .stage-frame {
@@ -758,6 +759,64 @@ body[data-mode="animate"] .stage-frame {
   outline: none;
   resize: both;
   z-index: 15;
+}
+
+/* Floating Zoom Widget */
+.zoom-widget {
+  position: absolute;
+  bottom: 16px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  z-index: 25;
+}
+
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+.zoom-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.zoom-btn:active {
+  transform: scale(0.95);
+}
+
+.zoom-level-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: none;
+  background: #f1f5f9;
+  color: #1e293b;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 48px;
+  text-align: center;
+  transition: all 0.12s ease;
+}
+.zoom-level-btn:hover {
+  background: #e2e8f0;
 }
 
 /* RIGHT DOCK: PARTS & BACKDROP */

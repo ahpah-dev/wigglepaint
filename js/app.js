@@ -107,15 +107,40 @@
   }
 
   // --------------------------------------------------------------------------
-  // Responsive Stage Fitting & Coordinate Mapping
+  // Responsive Stage Fitting, Zoom & Coordinate Mapping
   // --------------------------------------------------------------------------
+  let currentZoom = 1.0;
+  let isAutoFit = true;
+
+  function updateZoomUI() {
+    const btn = document.getElementById('btn-zoom-reset');
+    if (btn) btn.textContent = `${Math.round(currentZoom * 100)}%`;
+  }
+
+  function applyStageZoom(zoomLevel, auto = false) {
+    isAutoFit = auto;
+    currentZoom = clamp(zoomLevel, 0.25, 4.0);
+    stageFrame.style.width = `${Math.round(STAGE_W * currentZoom)}px`;
+    stageFrame.style.height = `${Math.round(STAGE_H * currentZoom)}px`;
+    updateZoomUI();
+  }
+
   function fitStageToViewport() {
+    if (!isAutoFit) return;
     const rect = stageViewport.getBoundingClientRect();
     const availW = Math.max(240, rect.width - 28);
     const availH = Math.max(180, rect.height - 20);
     const scale = Math.min(availW / STAGE_W, availH / STAGE_H, 1.3);
-    stageFrame.style.width = `${Math.round(STAGE_W * scale)}px`;
-    stageFrame.style.height = `${Math.round(STAGE_H * scale)}px`;
+    applyStageZoom(scale, true);
+  }
+
+  function setZoom(nextZoom) {
+    applyStageZoom(nextZoom, false);
+    showToast(`🔍 Zoom ${Math.round(currentZoom * 100)}%`);
+  }
+
+  function zoomBy(factor) {
+    setZoom(currentZoom * factor);
   }
 
   function eventToStageCoords(e) {
@@ -127,6 +152,15 @@
   }
 
   new ResizeObserver(fitStageToViewport).observe(stageViewport);
+
+  // Wheel zoom with Ctrl or wheel over stage
+  stageViewport.addEventListener('wheel', (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.87;
+      zoomBy(factor);
+    }
+  }, { passive: false });
 
   // --------------------------------------------------------------------------
   // Palette Initialization
@@ -203,11 +237,13 @@
   function updateCoachBanner() {
     if (state.mode === 'draw') {
       if (state.selection) {
-        coachBanner.innerHTML = '✂️ <strong>Selection ready!</strong> Drag to move, drag corners to scale, or click <strong>Split to New Part</strong> above!';
+        coachBanner.innerHTML = '✂️ <strong>Selection ready!</strong> Drag to move, drag corners to scale, or use <strong>Copy (Ctrl+C)</strong>, <strong>Paste (Ctrl+V)</strong>, <strong>Delete (Del)</strong>!';
       } else if (state.editingBackdrop) {
         coachBanner.innerHTML = '🏞️ <strong>Painting Scenery Backdrop:</strong> Scenery stays completely still behind your animated characters!';
       } else if (state.tool === 'select') {
-        coachBanner.innerHTML = '✂️ <strong>Lasso Tool:</strong> Draw a loop around any piece (like an arm or ball) to move it or split it into its own Part!';
+        coachBanner.innerHTML = '🔲 <strong>Box Select:</strong> Drag a rectangle around any piece to move, copy, paste, delete, or split to part!';
+      } else if (state.tool === 'lasso') {
+        coachBanner.innerHTML = '✂️ <strong>Lasso Select:</strong> Draw a freehand loop around any shape to move, copy, paste, or delete!';
       } else {
         coachBanner.innerHTML = '🎨 <strong>Draw freely!</strong> Left-click = Primary color, Right-click = Secondary. Ready to bring it to life? Click <strong>2. Rig</strong> or <strong>3. Animate</strong>!';
       }
@@ -779,6 +815,22 @@
     });
 
     // Selection actions
+    document.getElementById('btn-copy-sel').addEventListener('click', () => {
+      if (PaintTools.copySelection()) {
+        showToast('📋 Selection copied to clipboard!');
+      }
+    });
+    document.getElementById('btn-paste-sel').addEventListener('click', () => {
+      if (PaintTools.pasteSelection()) {
+        showToast('📄 Selection pasted! Drag to position or scale corners.');
+        syncSubbarUI();
+        updateCoachBanner();
+        scheduleThumbRefresh();
+        requestRender();
+      } else {
+        showToast('Clipboard is empty! Select something and copy first.');
+      }
+    });
     document.getElementById('btn-pop-part').addEventListener('click', () => {
       const created = PaintTools.popSelectionToNewPart();
       if (created) {
@@ -799,6 +851,16 @@
       syncSubbarUI();
       scheduleThumbRefresh();
       requestRender();
+    });
+
+    // Zoom Controls
+    document.getElementById('btn-zoom-in').addEventListener('click', () => zoomBy(1.25));
+    document.getElementById('btn-zoom-out').addEventListener('click', () => zoomBy(0.8));
+    document.getElementById('btn-zoom-reset').addEventListener('click', () => setZoom(1.0));
+    document.getElementById('btn-zoom-fit').addEventListener('click', () => {
+      isAutoFit = true;
+      fitStageToViewport();
+      showToast(`🔍 Fit to window (${Math.round(currentZoom * 100)}%)`);
     });
 
     // Clear layer
@@ -1096,6 +1158,46 @@
         return;
       }
 
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (state.selection) {
+          e.preventDefault();
+          if (PaintTools.copySelection()) {
+            showToast('📋 Copied selection (Ctrl+C)');
+          }
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        if (state.clipboard) {
+          e.preventDefault();
+          if (state.mode !== 'draw') setMode('draw');
+          if (PaintTools.pasteSelection()) {
+            showToast('📄 Pasted selection (Ctrl+V)');
+            syncSubbarUI();
+            updateCoachBanner();
+            scheduleThumbRefresh();
+            requestRender();
+          }
+        }
+        return;
+      }
+
+      if ((e.ctrlKey || e.metaKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        zoomBy(1.25);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) {
+        e.preventDefault();
+        zoomBy(0.8);
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        setZoom(1.0);
+        return;
+      }
+
       if (e.code === 'Space') {
         e.preventDefault();
         togglePlayback();
@@ -1128,7 +1230,7 @@
       } else if (state.mode === 'draw') {
         const map = {
           b: 'brush', p: 'pencil', g: 'bucket', a: 'spray',
-          e: 'eraser', s: 'select', l: 'line', r: 'rect',
+          e: 'eraser', s: 'select', q: 'lasso', l: 'line', r: 'rect',
           o: 'ellipse', t: 'text', i: 'eyedropper'
         };
         if (map[k]) {
@@ -1197,7 +1299,13 @@
     document.getElementById('slider-smoothing').classList.toggle('hidden', !state.brushSmoothing);
     document.getElementById('label-smoothing').textContent = `${state.smoothingStrength ?? 75}%`;
     document.getElementById('label-smoothing').classList.toggle('hidden', !state.brushSmoothing);
-    document.getElementById('cluster-selection-actions').classList.toggle('hidden', !state.selection);
+    const hasSelOrClip = !!state.selection || !!state.clipboard;
+    document.getElementById('cluster-selection-actions').classList.toggle('hidden', !hasSelOrClip);
+    document.getElementById('btn-copy-sel').disabled = !state.selection;
+    document.getElementById('btn-del-sel').disabled = !state.selection;
+    document.getElementById('btn-stamp-sel').disabled = !state.selection;
+    document.getElementById('btn-pop-part').disabled = !state.selection;
+    document.getElementById('btn-paste-sel').disabled = !state.clipboard;
 
     document.getElementById('slider-brush-size').value = state.brushSize;
     document.getElementById('label-brush-size').textContent = `${state.brushSize}px`;
@@ -1728,6 +1836,10 @@
     if (reason === 'color-picked') {
       syncColorUI();
     } else if (reason === 'spray-tick') {
+      requestRender();
+    } else if (reason === 'selection-created' || reason === 'selection-commit' || reason === 'selection-deleted' || reason === 'clipboard-changed') {
+      syncSubbarUI();
+      updateCoachBanner();
       requestRender();
     } else if (reason === 'history-push') {
       syncModeButtons();

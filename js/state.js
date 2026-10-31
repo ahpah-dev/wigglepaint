@@ -118,6 +118,7 @@
 
     // Active floating lasso/rect selection in Draw mode
     selection: null,
+    clipboard: null, // { canvas, w, h } copied selection buffer
 
     // Skeleton (Rest Pose)
     joints: [], // [{ id, x, y, pinned }]

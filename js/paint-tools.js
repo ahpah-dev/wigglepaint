@@ -72,8 +72,51 @@
 
   function deleteSelectionPixels() {
     if (!state.selection) return;
+    pushHistory('Delete Selection');
     state.selection = null;
     notify('selection-deleted');
+  }
+
+  function copySelection() {
+    const sel = state.selection;
+    if (!sel || !sel.canvas) return false;
+    const clipCanvas = createOffscreenCanvas(sel.w, sel.h);
+    clipCanvas.getContext('2d').drawImage(sel.canvas, 0, 0, sel.w, sel.h);
+    state.clipboard = {
+      canvas: clipCanvas,
+      w: sel.w,
+      h: sel.h
+    };
+    notify('clipboard-changed');
+    return true;
+  }
+
+  function pasteSelection(targetX, targetY) {
+    if (!state.clipboard || !state.clipboard.canvas) return false;
+    if (state.selection) {
+      commitSelection();
+    }
+    pushHistory('Paste Selection');
+    const cb = state.clipboard;
+    const pasteCanvas = createOffscreenCanvas(cb.w, cb.h);
+    pasteCanvas.getContext('2d').drawImage(cb.canvas, 0, 0, cb.w, cb.h);
+
+    const px = (targetX !== undefined) ? targetX : clamp(Math.round((STAGE_W - cb.w) * 0.5), 20, STAGE_W - cb.w - 20);
+    const py = (targetY !== undefined) ? targetY : clamp(Math.round((STAGE_H - cb.h) * 0.5), 20, STAGE_H - cb.h - 20);
+
+    const target = getActiveDrawTarget();
+    state.selection = {
+      canvas: pasteCanvas,
+      x: Math.max(0, px),
+      y: Math.max(0, py),
+      w: cb.w,
+      h: cb.h,
+      rotation: 0,
+      isBackdrop: target ? target.isBackdrop : false,
+      partId: (target && target.part) ? target.part.id : null
+    };
+    notify('selection-created');
+    return true;
   }
 
   function drawPixelLine(ctx, x0, y0, x1, y1, size, color) {
@@ -277,10 +320,14 @@
       return null;
     }
 
-    if (state.tool === 'select') {
+    if (state.tool === 'select' || state.tool === 'lasso') {
       previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
       activeStroke = {
-        kind: 'lasso',
+        kind: state.tool === 'select' ? 'rect-select' : 'lasso',
+        x0: x,
+        y0: y,
+        x1: x,
+        y1: y,
         points: [{ x, y }],
         target
       };
@@ -512,6 +559,26 @@
       return { previewCanvas };
     }
 
+    if (activeStroke.kind === 'rect-select') {
+      activeStroke.x1 = x;
+      activeStroke.y1 = y;
+      const rx = Math.min(activeStroke.x0, activeStroke.x1);
+      const ry = Math.min(activeStroke.y0, activeStroke.y1);
+      const rw = Math.abs(activeStroke.x1 - activeStroke.x0);
+      const rh = Math.abs(activeStroke.y1 - activeStroke.y0);
+      previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
+      previewCtx.save();
+      previewCtx.strokeStyle = '#ffffff';
+      previewCtx.lineWidth = 3;
+      previewCtx.strokeRect(rx, ry, rw, rh);
+      previewCtx.setLineDash([5, 5]);
+      previewCtx.strokeStyle = '#2563eb';
+      previewCtx.lineWidth = 1.8;
+      previewCtx.strokeRect(rx, ry, rw, rh);
+      previewCtx.restore();
+      return { previewCanvas };
+    }
+
     if (activeStroke.kind === 'lasso') {
       const pts = activeStroke.points;
       if (dist(pts[pts.length - 1].x, pts[pts.length - 1].y, x, y) >= 3) {
@@ -550,6 +617,46 @@
       previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
       if (stroke.target.part) markPartDirty(stroke.target.part);
       notify('painted');
+      return;
+    }
+
+    if (stroke.kind === 'rect-select') {
+      previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
+      const rx = Math.round(Math.min(stroke.x0, stroke.x1));
+      const ry = Math.round(Math.min(stroke.y0, stroke.y1));
+      const rw = Math.round(Math.abs(stroke.x1 - stroke.x0));
+      const rh = Math.round(Math.abs(stroke.y1 - stroke.y0));
+
+      if (rw < 4 || rh < 4) return;
+
+      const cutCanvas = createOffscreenCanvas(rw, rh);
+      const cutCtx = cutCanvas.getContext('2d');
+      cutCtx.drawImage(stroke.target.canvas, rx, ry, rw, rh, 0, 0, rw, rh);
+
+      const tight = getCanvasContentBounds(cutCanvas, 4);
+      if (!tight) return;
+
+      pushHistory('Rect Select');
+      const srcCtx = stroke.target.ctx;
+      srcCtx.save();
+      srcCtx.clearRect(rx, ry, rw, rh);
+      srcCtx.restore();
+      if (stroke.target.part) markPartDirty(stroke.target.part);
+
+      const selCanvas = createOffscreenCanvas(tight.w, tight.h);
+      selCanvas.getContext('2d').drawImage(cutCanvas, tight.x, tight.y, tight.w, tight.h, 0, 0, tight.w, tight.h);
+
+      state.selection = {
+        canvas: selCanvas,
+        x: rx + tight.x,
+        y: ry + tight.y,
+        w: tight.w,
+        h: tight.h,
+        rotation: 0,
+        isBackdrop: stroke.target.isBackdrop,
+        partId: stroke.target.part ? stroke.target.part.id : null
+      };
+      notify('selection-created');
       return;
     }
 
@@ -646,6 +753,8 @@
     commitSelection,
     popSelectionToNewPart,
     deleteSelectionPixels,
+    copySelection,
+    pasteSelection,
     onPointerDown,
     onPointerMove,
     onPointerUp,
