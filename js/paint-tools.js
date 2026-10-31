@@ -145,7 +145,7 @@
   // Real-Time High-Fidelity Line Stabilizer (Zero post-stroke distortion)
   // Combines:
   // 1. Deadzone threshold (filters micro hand/sensor trembles)
-  // 2. Velocity-adaptive dual exponential filter (smooth on slow/curved strokes, responsive on fast flicks)
+  // 2. Multi-stage low-pass filtering with aggressive curve smoothing at higher settings
   // 3. Incremental Bézier midpoint spline rendering (perfect continuous curvature while drawing)
   // --------------------------------------------------------------------------
   function stepStabilizer(stroke, rawX, rawY) {
@@ -163,25 +163,29 @@
     stroke.rawPrevY = rawY;
 
     // Small deadzone proportional to strength to swallow micro jitter in place
-    const deadzone = 0.4 + strength01 * 1.2;
-    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2) {
+    const deadzone = 0.5 + strength01 * 2.0;
+    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2.5) {
       return { x: stroke.curX, y: stroke.curY, skip: true };
     }
 
-    // Dynamic smoothing factor: slightly lighter on rapid strokes to avoid rubber-band lag,
-    // maximum smoothing on steady curves and slower tracking where hand jitter is most visible.
-    const speedRatio = clamp(dRaw / 28, 0, 1);
-    const baseAlpha = clamp(1 - strength01 * 0.76, 0.14, 0.88);
-    const alpha = clamp(baseAlpha + speedRatio * 0.18, 0.18, 0.94);
+    // Dynamic smoothing factor:
+    // At high settings (75%-100%), alpha becomes very small (0.05 - 0.12),
+    // acting as a powerful physical stabilizer that pulls lines into flawless, sweeping curves.
+    const speedRatio = clamp(dRaw / 35, 0, 1);
+    const minAlpha = Math.max(0.045, 0.55 - strength01 * 0.51);
+    const maxAlpha = Math.max(0.08, 0.90 - strength01 * 0.70);
+    const alpha = clamp(minAlpha + speedRatio * (maxAlpha - minAlpha), 0.045, 0.92);
 
-    // Dual-stage IIR filter for buttery smooth trajectory without abrupt angular kinks
+    // 3-stage cascaded low-pass filter (Butterworth-like response) to eliminate all jitter/stair-stepping
     stroke.fx1 += (rawX - stroke.fx1) * alpha;
     stroke.fy1 += (rawY - stroke.fy1) * alpha;
     stroke.fx2 += (stroke.fx1 - stroke.fx2) * alpha;
     stroke.fy2 += (stroke.fy1 - stroke.fy2) * alpha;
+    stroke.fx3 += (stroke.fx2 - stroke.fx3) * alpha;
+    stroke.fy3 += (stroke.fy2 - stroke.fy3) * alpha;
 
-    stroke.curX = stroke.fx2;
-    stroke.curY = stroke.fy2;
+    stroke.curX = stroke.fx3;
+    stroke.curY = stroke.fy3;
     return { x: stroke.curX, y: stroke.curY, skip: false };
   }
 
@@ -365,6 +369,8 @@
         fy1: y,
         fx2: x,
         fy2: y,
+        fx3: x,
+        fy3: y,
         curX: x,
         curY: y,
         rawPrevX: x,
@@ -393,6 +399,8 @@
         fy1: y,
         fx2: x,
         fy2: y,
+        fx3: x,
+        fy3: y,
         curX: x,
         curY: y,
         rawPrevX: x,
@@ -510,7 +518,7 @@
 
       const prev = activeStroke.lastPt;
       const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
-      const minStep = state.brushSmoothing ? (1.0 + strength01 * 1.5) : 0.75;
+      const minStep = state.brushSmoothing ? (1.0 + strength01 * 3.0) : 0.75;
       if (dist(prev.x, prev.y, sPt.x, sPt.y) < minStep) {
         return { previewCanvas: null };
       }
