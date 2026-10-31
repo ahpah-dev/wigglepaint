@@ -241,9 +241,9 @@
       } else if (state.editingBackdrop) {
         coachBanner.innerHTML = '🏞️ <strong>Painting Scenery Backdrop:</strong> Scenery stays completely still behind your animated characters!';
       } else if (state.tool === 'select') {
-        coachBanner.innerHTML = '🔲 <strong>Box Select:</strong> Drag a rectangle around any piece to move, copy, paste, delete, or split to part!';
+        coachBanner.innerHTML = '🔲 <strong>Box Select:</strong> Drag a box OR click directly on any drawn line/shape to select it!';
       } else if (state.tool === 'lasso') {
-        coachBanner.innerHTML = '✂️ <strong>Lasso Select:</strong> Draw a freehand loop around any shape to move, copy, paste, or delete!';
+        coachBanner.innerHTML = '✂️ <strong>Lasso Select:</strong> Draw a loop OR click directly on any drawn shape to select it!';
       } else {
         coachBanner.innerHTML = '🎨 <strong>Draw freely!</strong> Left-click = Primary color, Right-click = Secondary. Ready to bring it to life? Click <strong>2. Rig</strong> or <strong>3. Animate</strong>!';
       }

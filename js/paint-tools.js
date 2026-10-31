@@ -4,7 +4,7 @@
 (function (global) {
   'use strict';
 
-  const { clamp, dist, rgbToHex, smartFloodFill, getCanvasContentBounds } = global.WPUtils;
+  const { clamp, dist, rgbToHex, smartFloodFill, getCanvasContentBounds, getConnectedComponentBoundsAndMask } = global.WPUtils;
   const {
     STAGE_W,
     STAGE_H,
@@ -119,8 +119,73 @@
     return true;
   }
 
+  function trySelectShapeAtPoint(target, x, y) {
+    const comp = getConnectedComponentBoundsAndMask(target.ctx, x, y, 6);
+    if (!comp || comp.w < 2 || comp.h < 2) return false;
+
+    const w = target.canvas.width;
+    const h = target.canvas.height;
+    const cw = comp.w;
+    const ch = comp.h;
+    const minX = comp.x;
+    const minY = comp.y;
+    const visited = comp.visited;
+
+    // Extract isolated connected component pixels
+    const cutCanvas = createOffscreenCanvas(cw, ch);
+    const cutCtx = cutCanvas.getContext('2d');
+    const cutData = cutCtx.createImageData(cw, ch);
+
+    const srcData = target.ctx.getImageData(0, 0, w, h);
+    const sData = srcData.data;
+    const cData = cutData.data;
+
+    pushHistory('Click Select');
+
+    for (let py = 0; py < ch; py++) {
+      const sy = minY + py;
+      for (let px = 0; px < cw; px++) {
+        const sx = minX + px;
+        const sidx = sy * w + sx;
+        if (visited[sidx]) {
+          const sPix = sidx * 4;
+          const cPix = (py * cw + px) * 4;
+          cData[cPix] = sData[sPix];
+          cData[cPix + 1] = sData[sPix + 1];
+          cData[cPix + 2] = sData[sPix + 2];
+          cData[cPix + 3] = sData[sPix + 3];
+
+          // Erase from source layer (lift up as selection)
+          sData[sPix + 3] = 0;
+        }
+      }
+    }
+
+    cutCtx.putImageData(cutData, 0, 0);
+    target.ctx.putImageData(srcData, 0, 0);
+    if (target.part) markPartDirty(target.part);
+
+    const tight = getCanvasContentBounds(cutCanvas, 4);
+    if (!tight) return false;
+
+    const selCanvas = createOffscreenCanvas(tight.w, tight.h);
+    selCanvas.getContext('2d').drawImage(cutCanvas, tight.x, tight.y, tight.w, tight.h, 0, 0, tight.w, tight.h);
+
+    state.selection = {
+      canvas: selCanvas,
+      x: minX + tight.x,
+      y: minY + tight.y,
+      w: tight.w,
+      h: tight.h,
+      rotation: 0,
+      isBackdrop: target.isBackdrop,
+      partId: target.part ? target.part.id : null
+    };
+    notify('selection-created');
+    return true;
+  }
+
   function drawPixelLine(ctx, x0, y0, x1, y1, size, color) {
-    x0 = Math.round(x0);
     y0 = Math.round(y0);
     x1 = Math.round(x1);
     y1 = Math.round(y1);
@@ -142,50 +207,47 @@
   }
 
   // --------------------------------------------------------------------------
-  // Real-Time High-Fidelity Line Stabilizer (Zero post-stroke distortion)
+  // Zero-Delay Predictive Line Stabilizer
   // Combines:
-  // 1. Deadzone threshold (filters micro hand/sensor trembles)
-  // 2. Multi-stage low-pass filtering with aggressive curve smoothing at higher settings
-  // 3. Incremental Bézier midpoint spline rendering (perfect continuous curvature while drawing)
+  // 1. Instant lead extrapolation: eliminates lag/delay behind the cursor!
+  // 2. High-frequency jitter absorption: removes hand and trackpad shakiness
+  // 3. Continuous midpoint Bézier splining with immediate feedback
   // --------------------------------------------------------------------------
   function stepStabilizer(stroke, rawX, rawY) {
     if (!state.brushSmoothing) {
       stroke.curX = rawX;
       stroke.curY = rawY;
-      return { x: rawX, y: rawY };
+      return { x: rawX, y: rawY, skip: false };
     }
 
     const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
 
-    // Calculate distance from previous raw input to estimate movement speed
     const dRaw = dist(stroke.rawPrevX, stroke.rawPrevY, rawX, rawY);
     stroke.rawPrevX = rawX;
     stroke.rawPrevY = rawY;
 
-    // Small deadzone proportional to strength to swallow micro jitter in place
-    const deadzone = 0.5 + strength01 * 2.0;
-    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2.5) {
+    // Small deadzone to absorb stationary micro-tremors without introducing lag
+    const deadzone = 0.25 + strength01 * 0.9;
+    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2.0) {
       return { x: stroke.curX, y: stroke.curY, skip: true };
     }
 
-    // Dynamic smoothing factor:
-    // At high settings (75%-100%), alpha becomes very small (0.05 - 0.12),
-    // acting as a powerful physical stabilizer that pulls lines into flawless, sweeping curves.
-    const speedRatio = clamp(dRaw / 35, 0, 1);
-    const minAlpha = Math.max(0.045, 0.55 - strength01 * 0.51);
-    const maxAlpha = Math.max(0.08, 0.90 - strength01 * 0.70);
-    const alpha = clamp(minAlpha + speedRatio * (maxAlpha - minAlpha), 0.045, 0.92);
+    // Responsive filter weights: balanced to filter jitter while tracking cursor promptly
+    const alpha = clamp(0.38 + (1 - strength01) * 0.44, 0.35, 0.92);
 
-    // 3-stage cascaded low-pass filter (Butterworth-like response) to eliminate all jitter/stair-stepping
     stroke.fx1 += (rawX - stroke.fx1) * alpha;
     stroke.fy1 += (rawY - stroke.fy1) * alpha;
     stroke.fx2 += (stroke.fx1 - stroke.fx2) * alpha;
     stroke.fy2 += (stroke.fy1 - stroke.fy2) * alpha;
-    stroke.fx3 += (stroke.fx2 - stroke.fx3) * alpha;
-    stroke.fy3 += (stroke.fy2 - stroke.fy3) * alpha;
 
-    stroke.curX = stroke.fx3;
-    stroke.curY = stroke.fy3;
+    // Lead-ahead prediction: cancels the phase lag of the low-pass filter
+    // so the drawn tip stays right with the cursor without sluggish trailing
+    const leadFactor = 0.35 * strength01;
+    const predX = stroke.fx2 + (stroke.fx1 - stroke.fx2) * leadFactor + (rawX - stroke.fx1) * (leadFactor * 0.5);
+    const predY = stroke.fy2 + (stroke.fy1 - stroke.fy2) * leadFactor + (rawY - stroke.fy1) * (leadFactor * 0.5);
+
+    stroke.curX = predX;
+    stroke.curY = predY;
     return { x: stroke.curX, y: stroke.curY, skip: false };
   }
 
@@ -354,6 +416,7 @@
         y0: y,
         x1: x,
         y1: y,
+        hasDragged: false,
         points: [{ x, y }],
         target
       };
@@ -369,8 +432,6 @@
         fy1: y,
         fx2: x,
         fy2: y,
-        fx3: x,
-        fy3: y,
         curX: x,
         curY: y,
         rawPrevX: x,
@@ -399,8 +460,6 @@
         fy1: y,
         fx2: x,
         fy2: y,
-        fx3: x,
-        fy3: y,
         curX: x,
         curY: y,
         rawPrevX: x,
@@ -518,7 +577,7 @@
 
       const prev = activeStroke.lastPt;
       const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
-      const minStep = state.brushSmoothing ? (1.0 + strength01 * 3.0) : 0.75;
+      const minStep = state.brushSmoothing ? (0.8 + strength01 * 0.8) : 0.75;
       if (dist(prev.x, prev.y, sPt.x, sPt.y) < minStep) {
         return { previewCanvas: null };
       }
@@ -602,6 +661,9 @@
     }
 
     if (activeStroke.kind === 'rect-select') {
+      if (dist(activeStroke.x0, activeStroke.y0, x, y) >= 3) {
+        activeStroke.hasDragged = true;
+      }
       activeStroke.x1 = x;
       activeStroke.y1 = y;
       const rx = Math.min(activeStroke.x0, activeStroke.x1);
@@ -622,6 +684,9 @@
     }
 
     if (activeStroke.kind === 'lasso') {
+      if (dist(activeStroke.x0, activeStroke.y0, x, y) >= 3) {
+        activeStroke.hasDragged = true;
+      }
       const pts = activeStroke.points;
       if (dist(pts[pts.length - 1].x, pts[pts.length - 1].y, x, y) >= 3) {
         pts.push({ x, y });
@@ -664,12 +729,24 @@
 
     if (stroke.kind === 'rect-select') {
       previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
+
+      // Single click without dragging: select connected drawn shape/line at click location!
+      if (!stroke.hasDragged) {
+        if (trySelectShapeAtPoint(stroke.target, stroke.x0, stroke.y0)) {
+          return;
+        }
+      }
+
       const rx = Math.round(Math.min(stroke.x0, stroke.x1));
       const ry = Math.round(Math.min(stroke.y0, stroke.y1));
       const rw = Math.round(Math.abs(stroke.x1 - stroke.x0));
       const rh = Math.round(Math.abs(stroke.y1 - stroke.y0));
 
-      if (rw < 4 || rh < 4) return;
+      if (rw < 4 || rh < 4) {
+        // Fallback: try click selection if drag was tiny
+        trySelectShapeAtPoint(stroke.target, stroke.x0, stroke.y0);
+        return;
+      }
 
       const cutCanvas = createOffscreenCanvas(rw, rh);
       const cutCtx = cutCanvas.getContext('2d');
@@ -705,7 +782,11 @@
     if (stroke.kind === 'lasso') {
       previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
       const pts = stroke.points;
-      if (pts.length < 3) return;
+
+      if (!stroke.hasDragged || pts.length < 3) {
+        trySelectShapeAtPoint(stroke.target, stroke.x0, stroke.y0);
+        return;
+      }
 
       let minX = STAGE_W, minY = STAGE_H, maxX = 0, maxY = 0;
       for (const p of pts) {

@@ -278,6 +278,68 @@
     };
   }
 
+  // Extract connected pixel component at (startX, startY)
+  function getConnectedComponentBoundsAndMask(ctx, startX, startY, alphaThreshold = 8) {
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+    const sx = Math.floor(startX);
+    const sy = Math.floor(startY);
+    if (sx < 0 || sy < 0 || sx >= w || sy >= h) return null;
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const startIdx = (sy * w + sx) * 4;
+    if (data[startIdx + 3] <= alphaThreshold) return null;
+
+    const visited = new Uint8Array(w * h);
+    const stack = [sx, sy];
+    visited[sy * w + sx] = 1;
+
+    let minX = sx, maxX = sx, minY = sy, maxY = sy;
+
+    while (stack.length > 0) {
+      const cy = stack.pop();
+      const cx = stack.pop();
+
+      if (cx < minX) minX = cx;
+      if (cx > maxX) maxX = cx;
+      if (cy < minY) minY = cy;
+      if (cy > maxY) maxY = cy;
+
+      // 4-way neighbors
+      const neighbors = [
+        [cx - 1, cy],
+        [cx + 1, cy],
+        [cx, cy - 1],
+        [cx, cy + 1]
+      ];
+
+      for (let i = 0; i < 4; i++) {
+        const nx = neighbors[i][0];
+        const ny = neighbors[i][1];
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+          const nidx = ny * w + nx;
+          if (!visited[nidx]) {
+            visited[nidx] = 1;
+            if (data[nidx * 4 + 3] > alphaThreshold) {
+              stack.push(nx, ny);
+            }
+          }
+        }
+      }
+    }
+
+    const cw = maxX - minX + 1;
+    const ch = maxY - minY + 1;
+    return {
+      x: minX,
+      y: minY,
+      w: cw,
+      h: ch,
+      visited
+    };
+  }
+
   let uidCounter = 1;
   function uid(prefix = 'id') {
     return `${prefix}_${Date.now().toString(36)}_${(uidCounter++).toString(36)}`;
@@ -298,6 +360,7 @@
     rgbToHex,
     smartFloodFill,
     getCanvasContentBounds,
+    getConnectedComponentBoundsAndMask,
     uid
   };
 })(window);
