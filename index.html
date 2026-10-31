@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WigglePaint — Easy Paint, Rig &amp; Tween Studio</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect x='2' y='2' width='24' height='24' rx='7' fill='%237c3aed'/%3E%3Cpath d='M8 18.5C10.2 13 13 21 15.6 14.5C17.4 10 19.5 16 21 10' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='21' cy='10' r='2.3' fill='%23fde047'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body data-mode="draw">
+  <!-- ======================= TOP HEADER BAR ======================= -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="brand" title="WigglePaint — Super Easy Paint, Rig & Tween Animator">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 28 28" width="24" height="24" fill="none">
+            <rect x="2" y="2" width="24" height="24" rx="7" fill="url(#logoGrad)" />
+            <path d="M8 18.5C10.2 13 13 21 15.6 14.5C17.4 10 19.5 16 21 10" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="21" cy="10" r="2.3" fill="#fde047"/>
+            <defs>
+              <linearGradient id="logoGrad" x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#2563eb"/>
+                <stop offset="0.52" stop-color="#7c3aed"/>
+                <stop offset="1" stop-color="#ea580c"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <span class="brand-name">WigglePaint</span>
+      </div>
+
+      <div class="topbar-divider"></div>
+
+      <button id="btn-new" class="ghost-btn" title="Start a fresh blank canvas">
+        <svg viewBox="0 0 20 20" width="15" height="15"><path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v4h4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
+        New
+      </button>
+
+      <div class="dropdown-wrap">
+        <button id="btn-examples" class="ghost-btn accent-subtle" title="Load a fun pre-rigged MS-Paint example!">
+          <span>✨ Examples</span>
+          <svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+        <div id="menu-examples" class="dropdown-menu hidden">
+          <button data-template="buddy" class="dropdown-item">
+            <span class="item-emoji">👋</span>
+            <div>
+              <strong>Waving Buddy</strong>
+              <small>Rigged character + springy wave</small>
+            </div>
+          </button>
+          <button data-template="dino" class="dropdown-item">
+            <span class="item-emoji">🦖</span>
+            <div>
+              <strong>Bouncy Dino</strong>
+              <small>Spine, tail &amp; legs hop cycle</small>
+            </div>
+          </button>
+          <button data-template="slime" class="dropdown-item">
+            <span class="item-emoji">🏀</span>
+            <div>
+              <strong>Squishy Slime &amp; Ball</strong>
+              <small>Multi-part squash &amp; stretch tween</small>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <div class="topbar-divider"></div>
+
+      <button id="btn-undo" class="icon-btn" title="Undo (Ctrl+Z)" disabled>
+        <svg viewBox="0 0 20 20" width="16" height="16"><path d="M7 6L3 10l4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 10H12a4.5 4.5 0 1 1 0 9H9" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      </button>
+      <button id="btn-redo" class="icon-btn" title="Redo (Ctrl+Y)" disabled>
+        <svg viewBox="0 0 20 20" width="16" height="16"><path d="M13 6l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M16.5 10H8a4.5 4.5 0 1 0 0 9h3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <!-- CENTER 1-2-3 MODE SWITCHER -->
+    <nav class="mode-switcher" aria-label="Workflow Modes">
+      <button class="mode-btn active" data-mode="draw" title="Draw & paint with MS-Paint tools (Shortcut: 1)">
+        <span class="step-num">1</span>
+        <span>Draw</span>
+      </button>
+      <span class="mode-arrow" aria-hidden="true">›</span>
+      <button class="mode-btn" data-mode="rig" title="Add bones & joints to bend your drawing (Shortcut: 2)">
+        <span class="step-num">2</span>
+        <span>Rig</span>
+        <span id="badge-bones" class="mode-badge hidden">0</span>
+      </button>
+      <span class="mode-arrow" aria-hidden="true">›</span>
+      <button class="mode-btn" data-mode="animate" title="Pose & tween automatically (Shortcut: 3)">
+        <span class="step-num">3</span>
+        <span>Animate</span>
+        <span id="badge-poses" class="mode-badge">1</span>
+      </button>
+    </nav>
+
+    <div class="topbar-right">
+      <button id="btn-save" class="ghost-btn" title="Save editable .wiggle.json project">Save</button>
+      <button id="btn-open" class="ghost-btn" title="Open .wiggle.json project">Open</button>
+      <input type="file" id="file-open-input" accept=".json" class="hidden" />
+
+      <div class="dropdown-wrap">
+        <button id="btn-export-gif" class="primary-export-btn" title="Export animated looping GIF">
+          <svg viewBox="0 0 20 20" width="15" height="15"><path d="M10 3v9m0 0l-3.5-3.5M10 12l3.5-3.5M4 14v2a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span id="export-btn-label">Export GIF</span>
+        </button>
+      </div>
+      <div class="dropdown-wrap">
+        <button id="btn-more-export" class="icon-btn" title="More export options (WebM Video, PNG)">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        </button>
+        <div id="menu-export" class="dropdown-menu dropdown-right hidden">
+          <button id="btn-export-webm" class="dropdown-item">
+            <span class="item-emoji">🎬</span>
+            <div>
+              <strong>Export Video (.webm)</strong>
+              <small>Smooth 60fps video clip</small>
+            </div>
+          </button>
+          <button id="btn-export-png" class="dropdown-item">
+            <span class="item-emoji">🖼️</span>
+            <div>
+              <strong>Save Current Frame (.png)</strong>
+              <small>Crisp snapshot image</small>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======================= CONTEXTUAL SUB-TOOLBAR ======================= -->
+  <section class="subbar">
+    <!-- DRAW OPTIONS -->
+    <div id="subbar-draw" class="subbar-group">
+      <div class="control-cluster" id="cluster-brush-size">
+        <span class="cluster-label">Size</span>
+        <div class="size-dots" id="size-quick-dots">
+          <button data-size="3" class="size-dot-btn" title="Thin (3px)"><span style="width:4px;height:4px"></span></button>
+          <button data-size="8" class="size-dot-btn active" title="Medium (8px)"><span style="width:8px;height:8px"></span></button>
+          <button data-size="16" class="size-dot-btn" title="Thick (16px)"><span style="width:12px;height:12px"></span></button>
+          <button data-size="28" class="size-dot-btn" title="Chunky (28px)"><span style="width:16px;height:16px"></span></button>
+        </div>
+        <input type="range" id="slider-brush-size" min="1" max="60" value="8" />
+        <span id="label-brush-size" class="value-pill">8px</span>
+      </div>
+
+      <label class="toggle-chip" id="chip-smoothing" title="Smooth out hand jitter while drawing">
+        <input type="checkbox" id="chk-smoothing" checked />
+        <span>Smooth Ink</span>
+      </label>
+
+      <div class="control-cluster hidden" id="cluster-shape-fill">
+        <span class="cluster-label">Shape</span>
+        <div class="seg-group">
+          <button data-fill="outline" class="seg-btn">Outline</button>
+          <button data-fill="fill" class="seg-btn">Solid</button>
+          <button data-fill="both" class="seg-btn active">Outline + Fill</button>
+        </div>
+      </div>
+
+      <div class="control-cluster hidden" id="cluster-bucket-tol">
+        <span class="cluster-label">Fill Tolerance</span>
+        <input type="range" id="slider-tolerance" min="5" max="110" value="42" />
+        <span id="label-tolerance" class="value-pill">42</span>
+      </div>
+
+      <div class="control-cluster hidden" id="cluster-font-size">
+        <span class="cluster-label">Text Size</span>
+        <input type="range" id="slider-font-size" min="14" max="72" value="28" />
+        <span id="label-font-size" class="value-pill">28px</span>
+      </div>
+
+      <div class="control-cluster selection-banner hidden" id="cluster-selection-actions">
+        <span class="sel-badge">Selection Active</span>
+        <button id="btn-pop-part" class="magic-pill emerald" title="Move selected pixels onto their own tweenable Part!">
+          ✂️ Split to New Part
+        </button>
+        <button id="btn-stamp-sel" class="mini-btn">Stamp Down</button>
+        <button id="btn-del-sel" class="mini-btn danger">Delete</button>
+      </div>
+
+      <div class="subbar-spacer"></div>
+      <button id="btn-clear-layer" class="mini-btn" title="Clear active Part or Backdrop">Clear Layer</button>
+    </div>
+
+    <!-- RIG OPTIONS -->
+    <div id="subbar-rig" class="subbar-group hidden">
+      <div class="seg-group">
+        <button data-rigtool="bone" class="seg-btn active" title="Click & drag on your character to draw connected bones">🦴 Draw Bones</button>
+        <button data-rigtool="move" class="seg-btn" title="Reposition existing joints without deforming">✥ Adjust Joints</button>
+        <button data-rigtool="pin" class="seg-btn" title="Pin/unpin a joint so IK stops there">📌 Pin Joint</button>
+        <button data-rigtool="erase" class="seg-btn" title="Click any bone or joint to remove it">🗑️ Remove</button>
+      </div>
+
+      <div class="topbar-divider"></div>
+
+      <span class="cluster-label">1-Click Auto-Rig:</span>
+      <button data-stamp="biped" class="magic-pill violet" title="Drop a ready-made character skeleton scaled to your drawing!">⚡ Person Rig</button>
+      <button data-stamp="quad" class="magic-pill violet" title="Drop a pet/dino skeleton!">⚡ Pet / Dino</button>
+      <button data-stamp="bounce_spine" class="magic-pill violet" title="Drop a simple 3-bone bendy spine!">⚡ Bendy Spine</button>
+
+      <div class="subbar-spacer"></div>
+
+      <label class="toggle-chip" title="Preview the auto-generated soft skinning triangles">
+        <input type="checkbox" id="chk-wireframe" />
+        <span>Show Mesh</span>
+      </label>
+      <button id="btn-clear-rig" class="mini-btn danger" title="Remove all bones">Clear Rig</button>
+    </div>
+
+    <!-- ANIMATE OPTIONS -->
+    <div id="subbar-animate" class="subbar-group hidden">
+      <div class="seg-group" id="anim-tool-group">
+        <button data-animtool="ik" class="seg-btn active" title="Drag any joint dot to bend limbs naturally (Inverse Kinematics); drag bone shaft to rotate!">🤖 Smart Pose (IK)</button>
+        <button data-animtool="fk" class="seg-btn" title="Rotate individual bones directly around their base joint">🔄 Rotate Bones</button>
+        <button data-animtool="transform" class="seg-btn" title="Move, rotate, or squash & stretch the whole Part!">📐 Squash / Move Box</button>
+      </div>
+
+      <label class="toggle-chip" id="chip-stretch" title="Allow limbs to stretch like rubber-hose cartoons!">
+        <input type="checkbox" id="chk-stretch" />
+        <span>Rubber Stretch</span>
+      </label>
+
+      <div class="topbar-divider"></div>
+
+      <span class="cluster-label">1-Click Motion:</span>
+      <button data-motion="breathe" class="magic-pill coral" title="Generate a gentle breathing idle loop">✨ Breathe</button>
+      <button data-motion="wave" class="magic-pill coral" title="Generate a friendly wave / bop loop">👋 Wave</button>
+      <button data-motion="jump" class="magic-pill coral" title="Generate a squash-and-stretch jump!">🚀 Jump</button>
+      <button data-motion="walk" class="magic-pill coral" title="Generate a jaunty walk / bounce cycle">🚶 Walk</button>
+
+      <div class="subbar-spacer"></div>
+      <button id="btn-reset-pose" class="mini-btn" title="Reset current pose back to neutral rest pose">Reset Pose</button>
+    </div>
+  </section>
+
+  <!-- ======================= MAIN WORKSPACE ======================= -->
+  <main class="workspace">
+    <!-- LEFT DOCK: MS-PAINT TOOLS & PALETTE -->
+    <aside class="left-dock">
+      <div class="dock-section-title">Paint Tools</div>
+      <div class="tool-grid" id="paint-tool-grid">
+        <button data-tool="brush" class="tool-btn active" title="Smooth Brush (B)">
+          <svg viewBox="0 0 24 24"><path d="M18.5 3.5a2.12 2.12 0 0 1 3 3L11 17l-4 1 1-4L18.5 3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M5 20c1.5 0 3-.8 3-2.2 0-1-.8-1.8-1.8-1.8-1.2 0-2.2 1-2.2 2.5 0 .8-.5 1.5-1 1.5h2z" fill="currentColor"/></svg>
+          <span>Brush</span>
+        </button>
+        <button data-tool="pencil" class="tool-btn" title="Crisp Pixel Pencil (P)">
+          <svg viewBox="0 0 24 24"><path d="M16 3l5 5L8 21H3v-5L16 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13.5 5.5l5 5" stroke="currentColor" stroke-width="2"/></svg>
+          <span>Pencil</span>
+        </button>
+        <button data-tool="bucket" class="tool-btn" title="Smart Paint Bucket Fill (G)">
+          <svg viewBox="0 0 24 24"><path d="M19 11l-8-8-8.5 8.5a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0L19 11z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M20 14.5c0 0 2.5 2.7 2.5 4.2a2.5 2.5 0 0 1-5 0c0-1.5 2.5-4.2 2.5-4.2z" fill="currentColor"/></svg>
+          <span>Fill</span>
+        </button>
+        <button data-tool="spray" class="tool-btn" title="Classic MS-Paint Airbrush Spray (A)">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="9" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 9V6h3v3M4 6h3M5 3l2 1M5 9l2-1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Spray</span>
+        </button>
+        <button data-tool="eraser" class="tool-btn" title="Eraser (E)">
+          <svg viewBox="0 0 24 24"><path d="M20 11l-7-7-9 9 6 6h7l3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 19h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Eraser</span>
+        </button>
+        <button data-tool="select" class="tool-btn" title="Freeform Lasso Cut / Pop to Part (S)">
+          <svg viewBox="0 0 24 24"><ellipse cx="12" cy="11" rx="8" ry="6" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="3 2.5"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 19c0 1.5-1.5 2.5-3 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <span>Lasso</span>
+        </button>
+        <button data-tool="line" class="tool-btn" title="Line Tool — Hold Shift to snap 45° (L)">
+          <svg viewBox="0 0 24 24"><line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="4" cy="20" r="2" fill="currentColor"/><circle cx="20" cy="4" r="2" fill="currentColor"/></svg>
+          <span>Line</span>
+        </button>
+        <button data-tool="rect" class="tool-btn" title="Rectangle — Hold Shift for Square (R)">
+          <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <span>Box</span>
+        </button>
+        <button data-tool="ellipse" class="tool-btn" title="Circle / Oval — Hold Shift for Circle (O)">
+          <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>
+          <span>Oval</span>
+        </button>
+        <button data-tool="star" class="tool-btn" title="Star Shape">
+          <svg viewBox="0 0 24 24"><polygon points="12,3 14.8,8.8 21,9.6 16.5,14 17.6,20.2 12,17.2 6.4,20.2 7.5,14 3,9.6 9.2,8.8" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <span>Star</span>
+        </button>
+        <button data-tool="text" class="tool-btn" title="Text Tool (T)">
+          <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Text</span>
+        </button>
+        <button data-tool="eyedropper" class="tool-btn" title="Color Picker — or Alt+Click anytime! (I)">
+          <svg viewBox="0 0 24 24"><path d="M14 6l4 4M15.5 4.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4L15.5 4.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <span>Picker</span>
+        </button>
+      </div>
+
+      <div class="dock-section-title">Colors <small>(L / R Click)</small></div>
+      <div class="color-pod">
+        <div class="active-swatches">
+          <label class="swatch-primary" id="swatch-primary-box" title="Primary Color (Left-click)">
+            <input type="color" id="input-primary-color" value="#1e2430" />
+          </label>
+          <label class="swatch-secondary" id="swatch-secondary-box" title="Secondary / Fill Color (Right-click)">
+            <input type="color" id="input-secondary-color" value="#ff5964" />
+          </label>
+          <button id="btn-swap-colors" class="swap-colors-btn" title="Swap Primary & Secondary Colors (X)">⇄</button>
+        </div>
+
+        <div class="palette-grid" id="palette-grid"></div>
+      </div>
+    </aside>
+
+    <!-- CENTER STAGE VIEWPORT -->
+    <section class="stage-area" id="stage-area">
+      <div class="coach-pill" id="coach-banner">
+        🎨 <strong>Draw freely!</strong> Left-click paints Primary color, Right-click paints Secondary. Click <strong>2. Rig</strong> or <strong>3. Animate</strong> anytime!
+      </div>
+
+      <div class="stage-viewport" id="stage-viewport">
+        <div class="stage-frame" id="stage-frame">
+          <canvas id="stage-canvas" width="800" height="520"></canvas>
+          <canvas id="overlay-canvas" width="800" height="520"></canvas>
+          <textarea id="canvas-text-input" class="canvas-text-overlay hidden" rows="1" placeholder="Type here..."></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT DOCK: PARTS & BACKDROP -->
+    <aside class="right-dock">
+      <div class="dock-header-row">
+        <span class="dock-section-title" style="margin:0">Parts</span>
+        <button id="btn-add-part" class="mini-add-btn" title="Add a separate drawing Part (e.g. prop, ball, hat)">+ Part</button>
+      </div>
+      <p class="dock-hint">Draw everything on 1 part for bendy rigging, or add parts for separate objects!</p>
+
+      <div class="parts-list" id="parts-list"></div>
+
+      <div class="backdrop-card-wrap">
+        <div class="dock-section-title">Scenery Backdrop</div>
+        <div id="backdrop-card" class="part-card backdrop-card" title="Click to paint background scenery (stays still when bones move!)">
+          <canvas id="backdrop-thumb" width="56" height="36" class="part-thumb"></canvas>
+          <div class="part-meta">
+            <div class="part-title-row">
+              <strong>Backdrop</strong>
+              <span class="part-tag">Still</span>
+            </div>
+            <div class="backdrop-controls">
+              <label class="paper-swatch-label" title="Canvas Paper Color">
+                <span>Paper</span>
+                <input type="color" id="input-bg-color" value="#ffffff" />
+              </label>
+              <button id="btn-toggle-backdrop" class="tiny-icon-btn" title="Show/Hide Backdrop">👁️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ======================= BOTTOM TIMELINE & POSE STRIP ======================= -->
+  <footer class="timeline-bar">
+    <div class="transport-panel">
+      <button id="btn-play" class="play-btn" title="Play / Pause Animation (Spacebar)">
+        <span id="play-icon">▶</span>
+        <span id="play-label">Play</span>
+      </button>
+
+      <div class="transport-toggles">
+        <label class="mini-check" title="Smoothly tween the last pose back into Pose 1 for an endless loop!">
+          <input type="checkbox" id="chk-loop-seamless" checked />
+          <span>Seamless Loop</span>
+        </label>
+        <label class="mini-check" title="Show ghost outlines of neighboring poses while posing">
+          <input type="checkbox" id="chk-onion" checked />
+          <span>Onion Skin</span>
+        </label>
+      </div>
+
+      <div class="speed-row">
+        <span>Speed</span>
+        <select id="select-speed" title="Playback Speed">
+          <option value="0.5">0.5×</option>
+          <option value="1" selected>1.0×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2.0×</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="poses-track-wrap">
+      <div class="scrubber-row">
+        <input type="range" id="timeline-scrubber" min="0" max="1000" value="0" title="Drag to scrub smoothly through tweened frames!" />
+        <span id="time-readout" class="time-readout">0.00s / 0.45s</span>
+      </div>
+
+      <div class="poses-strip" id="poses-strip"></div>
+    </div>
+  </footer>
+
+  <!-- Easing & Duration Popover for Tween Bridges -->
+  <div id="tween-popover" class="tween-popover hidden">
+    <div class="popover-title">Tween Transition</div>
+    <div class="popover-grid" id="popover-easing-btns">
+      <button data-ease="smooth" class="ease-choice">🌊 Smooth</button>
+      <button data-ease="springy" class="ease-choice">🌀 Springy</button>
+      <button data-ease="bouncy" class="ease-choice">🏀 Bouncy</button>
+      <button data-ease="elastic" class="ease-choice">🎸 Elastic</button>
+      <button data-ease="linear" class="ease-choice">📏 Linear</button>
+      <button data-ease="hold" class="ease-choice">⏸️ Hold (Step)</button>
+    </div>
+    <div class="popover-dur-row">
+      <span>Duration:</span>
+      <div class="dur-pills" id="popover-dur-btns">
+        <button data-dur="0.2">0.2s</button>
+        <button data-dur="0.35">0.35s</button>
+        <button data-dur="0.5">0.5s</button>
+        <button data-dur="0.8">0.8s</button>
+        <button data-dur="1.2">1.2s</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts (ordered cleanly so file:// double-click AND localhost both work!) -->
+  <script src="js/utils.js"></script>
+  <script src="js/gif.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/rigging.js"></script>
+  <script src="js/tweening.js"></script>
+  <script src="js/paint-tools.js"></script>
+  <script src="js/renderer.js"></script>
+  <script src="js/templates.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
