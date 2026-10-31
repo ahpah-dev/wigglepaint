@@ -151,6 +151,33 @@
     };
   }
 
+  // Collect every pointer sample for this event, including the sub-frame
+  // frames the browser coalesced into it. High frequency pointers report far
+  // more samples than we get events, and feeding all of them keeps fast
+  // strokes smooth instead of faceted.
+  function stageSamplesFromEvent(e) {
+    let list = null;
+    if (typeof e.getCoalescedEvents === 'function') {
+      try {
+        list = e.getCoalescedEvents();
+      } catch (err) {
+        list = null;
+      }
+    }
+    const events = list && list.length ? list : [e];
+    const out = [];
+    for (let i = 0; i < events.length; i++) {
+      const ev = events[i];
+      const p = eventToStageCoords(ev);
+      out.push({
+        x: p.x,
+        y: p.y,
+        t: ev.timeStamp || performance.now()
+      });
+    }
+    return out;
+  }
+
   new ResizeObserver(fitStageToViewport).observe(stageViewport);
 
   // Wheel zoom with Ctrl or wheel over stage
@@ -555,7 +582,7 @@
 
     // -------------------- 1. DRAW MODE --------------------
     if (state.mode === 'draw') {
-      const res = PaintTools.onPointerMove(x, y, e);
+      const res = PaintTools.onPointerMove(x, y, e, stageSamplesFromEvent(e));
       if (res) uiHintState.previewCanvas = res.previewCanvas;
       requestRender();
       return;
@@ -703,7 +730,8 @@
   function endStagePointer(e) {
     if (state.mode === 'draw') {
       uiHintState.previewCanvas = null;
-      PaintTools.onPointerUp(e);
+      const end = eventToStageCoords(e);
+      PaintTools.onPointerUp(e, end.x, end.y);
       syncSubbarUI();
       updateCoachBanner();
       scheduleThumbRefresh();

@@ -5,6 +5,7 @@
   'use strict';
 
   const { clamp, dist, rgbToHex, smartFloodFill, getCanvasContentBounds, getConnectedComponentBoundsAndMask } = global.WPUtils;
+  const { StrokeSmoother, catmullRomToBezier } = global.WPSmoothing;
   const {
     STAGE_W,
     STAGE_H,
@@ -207,48 +208,43 @@
   }
 
   // --------------------------------------------------------------------------
-  // Zero-Delay Predictive Line Stabilizer
-  // Combines:
-  // 1. Instant lead extrapolation: eliminates lag/delay behind the cursor!
-  // 2. High-frequency jitter absorption: removes hand and trackpad shakiness
-  // 3. Continuous midpoint Bézier splining with immediate feedback
+  // Smoothed stroke rendering
   // --------------------------------------------------------------------------
-  function stepStabilizer(stroke, rawX, rawY) {
-    if (!state.brushSmoothing) {
-      stroke.curX = rawX;
-      stroke.curY = rawY;
-      return { x: rawX, y: rawY, skip: false };
-    }
+  // The stroke tip is produced by a 1€ filter (see js/smoothing.js) which kills
+  // hand tremor without letting the line fall behind the cursor. The resulting
+  // anchors are then joined by a centripetal Catmull-Rom spline so the stroke
+  // is one continuous curve instead of a chain of straight chords.
+  //
+  // The tangent at the newest anchor is extrapolated forwards, otherwise the
+  // visible tip would trail the cursor by a full sample.
+  function drawSplineSegment(ctx, smoother) {
+    const pts = smoother.pts;
+    const n = pts.length;
+    if (n < 2) return;
 
-    const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
+    const p2 = pts[n - 1];
+    const p1 = pts[n - 2];
+    const p0 = n >= 3 ? pts[n - 3] : p1;
+    const p3 = { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y };
 
-    const dRaw = dist(stroke.rawPrevX, stroke.rawPrevY, rawX, rawY);
-    stroke.rawPrevX = rawX;
-    stroke.rawPrevY = rawY;
+    const c = catmullRomToBezier(p0, p1, p2, p3);
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.bezierCurveTo(c.c1x, c.c1y, c.c2x, c.c2y, p2.x, p2.y);
+    ctx.stroke();
+  }
 
-    // Small deadzone to absorb stationary micro-tremors without introducing lag
-    const deadzone = 0.25 + strength01 * 0.9;
-    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2.0) {
-      return { x: stroke.curX, y: stroke.curY, skip: true };
-    }
+  // Build the per-stroke smoother, honouring the live slider value.
+  function makeSmoother(x, y, t) {
+    const sm = new StrokeSmoother((state.smoothingStrength ?? 75) / 100);
+    sm.reset(x, y, t);
+    return sm;
+  }
 
-    // Responsive filter weights: balanced to filter jitter while tracking cursor promptly
-    const alpha = clamp(0.38 + (1 - strength01) * 0.44, 0.35, 0.92);
-
-    stroke.fx1 += (rawX - stroke.fx1) * alpha;
-    stroke.fy1 += (rawY - stroke.fy1) * alpha;
-    stroke.fx2 += (stroke.fx1 - stroke.fx2) * alpha;
-    stroke.fy2 += (stroke.fy1 - stroke.fy2) * alpha;
-
-    // Lead-ahead prediction: cancels the phase lag of the low-pass filter
-    // so the drawn tip stays right with the cursor without sluggish trailing
-    const leadFactor = 0.35 * strength01;
-    const predX = stroke.fx2 + (stroke.fx1 - stroke.fx2) * leadFactor + (rawX - stroke.fx1) * (leadFactor * 0.5);
-    const predY = stroke.fy2 + (stroke.fy1 - stroke.fy2) * leadFactor + (rawY - stroke.fy1) * (leadFactor * 0.5);
-
-    stroke.curX = predX;
-    stroke.curY = predY;
-    return { x: stroke.curX, y: stroke.curY, skip: false };
+  // Pointer samples for this event (coalesced frames included) in stage space.
+  function samplesFor(samples, x, y) {
+    if (samples && samples.length) return samples;
+    return [{ x, y, t: performance.now() }];
   }
 
   function renderShapePreview(tool, x0, y0, x1, y1, shiftKey, strokeColor, fillColor) {
@@ -428,16 +424,8 @@
     if (state.tool === 'brush') {
       activeStroke = {
         kind: 'brush',
-        fx1: x,
-        fy1: y,
-        fx2: x,
-        fy2: y,
-        curX: x,
-        curY: y,
-        rawPrevX: x,
-        rawPrevY: y,
+        smoother: makeSmoother(x, y, e && e.timeStamp ? e.timeStamp : performance.now()),
         lastPt: { x, y },
-        lastMid: { x, y },
         color: strokeColor,
         size: state.brushSize,
         target
@@ -456,14 +444,7 @@
       const size = Math.max(1, Math.round(state.brushSize * 0.5));
       activeStroke = {
         kind: 'pencil',
-        fx1: x,
-        fy1: y,
-        fx2: x,
-        fy2: y,
-        curX: x,
-        curY: y,
-        rawPrevX: x,
-        rawPrevY: y,
+        smoother: makeSmoother(x, y, e && e.timeStamp ? e.timeStamp : performance.now()),
         lastX: x,
         lastY: y,
         color: strokeColor,
@@ -477,6 +458,7 @@
     if (state.tool === 'eraser') {
       activeStroke = {
         kind: 'eraser',
+        smoother: makeSmoother(x, y, e && e.timeStamp ? e.timeStamp : performance.now()),
         lastX: x,
         lastY: y,
         size: Math.max(4, state.brushSize * 1.4),
@@ -542,7 +524,7 @@
     return null;
   }
 
-  function onPointerMove(x, y, e) {
+  function onPointerMove(x, y, e, coalesced) {
     if (!activeStroke) return null;
 
     if (activeStroke.kind === 'sel-move' && state.selection) {
@@ -572,69 +554,99 @@
     }
 
     if (activeStroke.kind === 'brush') {
-      const sPt = stepStabilizer(activeStroke, x, y);
-      if (sPt.skip) return { previewCanvas: null };
-
-      const prev = activeStroke.lastPt;
-      const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
-      const minStep = state.brushSmoothing ? (0.8 + strength01 * 0.8) : 0.75;
-      if (dist(prev.x, prev.y, sPt.x, sPt.y) < minStep) {
-        return { previewCanvas: null };
-      }
-
       const ctx = activeStroke.target.ctx;
+      const smooth = !!state.brushSmoothing;
+      const samples = samplesFor(coalesced, x, y);
+
       ctx.save();
       ctx.strokeStyle = activeStroke.color;
       ctx.lineWidth = activeStroke.size;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.beginPath();
-      if (state.brushSmoothing) {
-        const mid = { x: (prev.x + sPt.x) * 0.5, y: (prev.y + sPt.y) * 0.5 };
-        ctx.moveTo(activeStroke.lastMid.x, activeStroke.lastMid.y);
-        ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y);
-        activeStroke.lastMid = mid;
-      } else {
-        ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(sPt.x, sPt.y);
+
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        if (!smooth) {
+          // Auto Smooth off: follow the pointer exactly.
+          const prev = activeStroke.lastPt;
+          ctx.beginPath();
+          ctx.moveTo(prev.x, prev.y);
+          ctx.lineTo(s.x, s.y);
+          ctx.stroke();
+          activeStroke.lastPt = { x: s.x, y: s.y };
+          continue;
+        }
+        activeStroke.smoother.setStrength((state.smoothingStrength ?? 75) / 100);
+        const r = activeStroke.smoother.push(s.x, s.y, s.t);
+        if (!r.added) continue;
+        drawSplineSegment(ctx, activeStroke.smoother);
+        activeStroke.lastPt = { x: r.x, y: r.y };
       }
-      ctx.stroke();
+
       ctx.restore();
-      activeStroke.lastPt = sPt;
       return { previewCanvas: null };
     }
 
     if (activeStroke.kind === 'pencil') {
-      const sPt = stepStabilizer(activeStroke, x, y);
-      if (sPt.skip) return { previewCanvas: null };
-
-      drawPixelLine(
-        activeStroke.target.ctx,
-        activeStroke.lastX,
-        activeStroke.lastY,
-        sPt.x,
-        sPt.y,
-        activeStroke.size,
-        activeStroke.color
-      );
-      activeStroke.lastX = sPt.x;
-      activeStroke.lastY = sPt.y;
+      const smooth = !!state.brushSmoothing;
+      const samples = samplesFor(coalesced, x, y);
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        let px = s.x;
+        let py = s.y;
+        if (smooth) {
+          activeStroke.smoother.setStrength((state.smoothingStrength ?? 75) / 100);
+          const r = activeStroke.smoother.push(s.x, s.y, s.t);
+          if (!r.added) continue;
+          px = r.x;
+          py = r.y;
+        }
+        drawPixelLine(
+          activeStroke.target.ctx,
+          activeStroke.lastX,
+          activeStroke.lastY,
+          px,
+          py,
+          activeStroke.size,
+          activeStroke.color
+        );
+        activeStroke.lastX = px;
+        activeStroke.lastY = py;
+      }
       return { previewCanvas: null };
     }
 
     if (activeStroke.kind === 'eraser') {
       const ctx = activeStroke.target.ctx;
+      const smooth = !!state.brushSmoothing;
+      const samples = samplesFor(coalesced, x, y);
+
       ctx.save();
       ctx.globalCompositeOperation = 'destination-out';
       ctx.lineWidth = activeStroke.size;
       ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(activeStroke.lastX, activeStroke.lastY);
-      ctx.lineTo(x, y);
-      ctx.stroke();
+      ctx.lineJoin = 'round';
+
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        if (!smooth) {
+          ctx.beginPath();
+          ctx.moveTo(activeStroke.lastX, activeStroke.lastY);
+          ctx.lineTo(s.x, s.y);
+          ctx.stroke();
+          activeStroke.lastX = s.x;
+          activeStroke.lastY = s.y;
+          continue;
+        }
+        activeStroke.smoother.setStrength((state.smoothingStrength ?? 75) / 100);
+        const r = activeStroke.smoother.push(s.x, s.y, s.t);
+        if (!r.added) continue;
+        drawSplineSegment(ctx, activeStroke.smoother);
+        activeStroke.lastX = r.x;
+        activeStroke.lastY = r.y;
+      }
+
       ctx.restore();
-      activeStroke.lastX = x;
-      activeStroke.lastY = y;
       return { previewCanvas: null };
     }
 
@@ -709,7 +721,7 @@
     return null;
   }
 
-  function onPointerUp(e) {
+  function onPointerUp(e, endX, endY) {
     if (sprayTimer) {
       cancelAnimationFrame(sprayTimer);
       sprayTimer = null;
@@ -718,6 +730,34 @@
 
     const stroke = activeStroke;
     activeStroke = null;
+
+    // Flush the final pointer position so the stroke always ends exactly
+    // where the button was released. Only meaningful when the smoother was
+    // actually fed during the stroke — with Auto Smooth off the smoother never
+    // advanced, and drawing its pending segment would paint a stray chord
+    // straight across the drawing.
+    if (
+      state.brushSmoothing &&
+      stroke.smoother &&
+      (stroke.kind === 'brush' || stroke.kind === 'eraser')
+    ) {
+      const last = stroke.smoother.pts[stroke.smoother.pts.length - 1];
+      const tx = typeof endX === 'number' ? endX : last ? last.x : null;
+      const ty = typeof endY === 'number' ? endY : last ? last.y : null;
+      if (tx !== null && ty !== null) {
+        if (stroke.smoother.finish(tx, ty)) {
+          const ctx = stroke.target.ctx;
+          ctx.save();
+          if (stroke.kind === 'eraser') ctx.globalCompositeOperation = 'destination-out';
+          else ctx.strokeStyle = stroke.color;
+          ctx.lineWidth = stroke.size;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          drawSplineSegment(ctx, stroke.smoother);
+          ctx.restore();
+        }
+      }
+    }
 
     if (stroke.kind === 'shape') {
       stroke.target.ctx.drawImage(previewCanvas, 0, 0);
