@@ -142,25 +142,47 @@
   }
 
   // --------------------------------------------------------------------------
-  // Real-Time While-Drawing Stabilizer (Zero post-stroke alteration!)
-  // Filters pointer jitter live as you drag and draws directly to canvas
+  // Real-Time High-Fidelity Line Stabilizer (Zero post-stroke distortion)
+  // Combines:
+  // 1. Deadzone threshold (filters micro hand/sensor trembles)
+  // 2. Velocity-adaptive dual exponential filter (smooth on slow/curved strokes, responsive on fast flicks)
+  // 3. Incremental Bézier midpoint spline rendering (perfect continuous curvature while drawing)
   // --------------------------------------------------------------------------
   function stepStabilizer(stroke, rawX, rawY) {
     if (!state.brushSmoothing) {
-      stroke.fx1 = rawX;
-      stroke.fy1 = rawY;
-      stroke.fx2 = rawX;
-      stroke.fy2 = rawY;
+      stroke.curX = rawX;
+      stroke.curY = rawY;
       return { x: rawX, y: rawY };
     }
+
     const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
-    // Dual-stage low-pass filter damps out high-frequency laptop trackpad jitter live
-    const alpha = clamp(1 - strength01 * 0.78, 0.16, 0.92);
+
+    // Calculate distance from previous raw input to estimate movement speed
+    const dRaw = dist(stroke.rawPrevX, stroke.rawPrevY, rawX, rawY);
+    stroke.rawPrevX = rawX;
+    stroke.rawPrevY = rawY;
+
+    // Small deadzone proportional to strength to swallow micro jitter in place
+    const deadzone = 0.4 + strength01 * 1.2;
+    if (dRaw < deadzone && dist(stroke.curX, stroke.curY, rawX, rawY) < deadzone * 2) {
+      return { x: stroke.curX, y: stroke.curY, skip: true };
+    }
+
+    // Dynamic smoothing factor: slightly lighter on rapid strokes to avoid rubber-band lag,
+    // maximum smoothing on steady curves and slower tracking where hand jitter is most visible.
+    const speedRatio = clamp(dRaw / 28, 0, 1);
+    const baseAlpha = clamp(1 - strength01 * 0.76, 0.14, 0.88);
+    const alpha = clamp(baseAlpha + speedRatio * 0.18, 0.18, 0.94);
+
+    // Dual-stage IIR filter for buttery smooth trajectory without abrupt angular kinks
     stroke.fx1 += (rawX - stroke.fx1) * alpha;
     stroke.fy1 += (rawY - stroke.fy1) * alpha;
     stroke.fx2 += (stroke.fx1 - stroke.fx2) * alpha;
     stroke.fy2 += (stroke.fy1 - stroke.fy2) * alpha;
-    return { x: stroke.fx2, y: stroke.fy2 };
+
+    stroke.curX = stroke.fx2;
+    stroke.curY = stroke.fy2;
+    return { x: stroke.curX, y: stroke.curY, skip: false };
   }
 
   function renderShapePreview(tool, x0, y0, x1, y1, shiftKey, strokeColor, fillColor) {
@@ -343,6 +365,10 @@
         fy1: y,
         fx2: x,
         fy2: y,
+        curX: x,
+        curY: y,
+        rawPrevX: x,
+        rawPrevY: y,
         lastPt: { x, y },
         lastMid: { x, y },
         color: strokeColor,
@@ -367,6 +393,10 @@
         fy1: y,
         fx2: x,
         fy2: y,
+        curX: x,
+        curY: y,
+        rawPrevX: x,
+        rawPrevY: y,
         lastX: x,
         lastY: y,
         color: strokeColor,
@@ -476,9 +506,11 @@
 
     if (activeStroke.kind === 'brush') {
       const sPt = stepStabilizer(activeStroke, x, y);
+      if (sPt.skip) return { previewCanvas: null };
+
       const prev = activeStroke.lastPt;
       const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
-      const minStep = state.brushSmoothing ? (1.2 + strength01 * 1.8) : 0.75;
+      const minStep = state.brushSmoothing ? (1.0 + strength01 * 1.5) : 0.75;
       if (dist(prev.x, prev.y, sPt.x, sPt.y) < minStep) {
         return { previewCanvas: null };
       }
@@ -507,6 +539,8 @@
 
     if (activeStroke.kind === 'pencil') {
       const sPt = stepStabilizer(activeStroke, x, y);
+      if (sPt.skip) return { previewCanvas: null };
+
       drawPixelLine(
         activeStroke.target.ctx,
         activeStroke.lastX,
