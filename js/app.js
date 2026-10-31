@@ -744,6 +744,20 @@
     });
     document.getElementById('chk-smoothing').addEventListener('change', (e) => {
       state.brushSmoothing = e.target.checked;
+      syncSubbarUI();
+      showToast(
+        state.brushSmoothing
+          ? `✨ Auto Line Smoothening ON (${state.smoothingStrength}%) — shaky laptop lines will auto-clean!`
+          : 'Auto Line Smoothening OFF (Raw hand-drawn strokes)'
+      );
+    });
+    document.getElementById('slider-smoothing').addEventListener('input', (e) => {
+      state.smoothingStrength = Number(e.target.value);
+      if (!state.brushSmoothing) {
+        state.brushSmoothing = true;
+        document.getElementById('chk-smoothing').checked = true;
+      }
+      syncSubbarUI();
     });
 
     // Shape fill buttons
@@ -1173,10 +1187,16 @@
 
     // Draw subbar visibility per tool
     const isShape = ['line', 'rect', 'ellipse', 'star'].includes(state.tool);
+    const isFreehand = state.tool === 'brush' || state.tool === 'pencil';
     document.getElementById('cluster-shape-fill').classList.toggle('hidden', !isShape || state.tool === 'line');
     document.getElementById('cluster-bucket-tol').classList.toggle('hidden', state.tool !== 'bucket');
     document.getElementById('cluster-font-size').classList.toggle('hidden', state.tool !== 'text');
-    document.getElementById('chip-smoothing').classList.toggle('hidden', state.tool !== 'brush');
+    document.getElementById('cluster-smoothing').classList.toggle('hidden', !isFreehand);
+    document.getElementById('chk-smoothing').checked = !!state.brushSmoothing;
+    document.getElementById('slider-smoothing').value = state.smoothingStrength ?? 75;
+    document.getElementById('slider-smoothing').classList.toggle('hidden', !state.brushSmoothing);
+    document.getElementById('label-smoothing').textContent = `${state.smoothingStrength ?? 75}%`;
+    document.getElementById('label-smoothing').classList.toggle('hidden', !state.brushSmoothing);
     document.getElementById('cluster-selection-actions').classList.toggle('hidden', !state.selection);
 
     document.getElementById('slider-brush-size').value = state.brushSize;

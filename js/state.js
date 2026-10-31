@@ -85,6 +85,7 @@
     secondaryColor: '#ff5964',
     brushSize: 8,
     brushSmoothing: true,
+    smoothingStrength: 75,
     shapeFillMode: 'both', // 'outline' | 'fill' | 'both'
     bucketTolerance: 42,
     fontSize: 28,

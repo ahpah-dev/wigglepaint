@@ -98,6 +98,28 @@
     }
   }
 
+  // --------------------------------------------------------------------------
+  // Real-Time While-Drawing Stabilizer (Zero post-stroke alteration!)
+  // Filters pointer jitter live as you drag and draws directly to canvas
+  // --------------------------------------------------------------------------
+  function stepStabilizer(stroke, rawX, rawY) {
+    if (!state.brushSmoothing) {
+      stroke.fx1 = rawX;
+      stroke.fy1 = rawY;
+      stroke.fx2 = rawX;
+      stroke.fy2 = rawY;
+      return { x: rawX, y: rawY };
+    }
+    const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
+    // Dual-stage low-pass filter damps out high-frequency laptop trackpad jitter live
+    const alpha = clamp(1 - strength01 * 0.78, 0.16, 0.92);
+    stroke.fx1 += (rawX - stroke.fx1) * alpha;
+    stroke.fy1 += (rawY - stroke.fy1) * alpha;
+    stroke.fx2 += (stroke.fx1 - stroke.fx2) * alpha;
+    stroke.fy2 += (stroke.fy1 - stroke.fy2) * alpha;
+    return { x: stroke.fx2, y: stroke.fy2 };
+  }
+
   function renderShapePreview(tool, x0, y0, x1, y1, shiftKey, strokeColor, fillColor) {
     previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
     previewCtx.save();
@@ -268,10 +290,13 @@
     pushHistory(`Paint (${state.tool})`);
 
     if (state.tool === 'brush') {
-      previewCtx.clearRect(0, 0, STAGE_W, STAGE_H);
       activeStroke = {
         kind: 'brush',
-        points: [{ x, y }],
+        fx1: x,
+        fy1: y,
+        fx2: x,
+        fy2: y,
+        lastPt: { x, y },
         lastMid: { x, y },
         color: strokeColor,
         size: state.brushSize,
@@ -288,15 +313,20 @@
     }
 
     if (state.tool === 'pencil') {
+      const size = Math.max(1, Math.round(state.brushSize * 0.5));
       activeStroke = {
         kind: 'pencil',
+        fx1: x,
+        fy1: y,
+        fx2: x,
+        fy2: y,
         lastX: x,
         lastY: y,
         color: strokeColor,
-        size: Math.max(1, Math.round(state.brushSize * 0.5)),
+        size,
         target
       };
-      drawPixelLine(target.ctx, x, y, x, y, activeStroke.size, strokeColor);
+      drawPixelLine(target.ctx, x, y, x, y, size, strokeColor);
       return { previewCanvas: null };
     }
 
@@ -398,12 +428,14 @@
     }
 
     if (activeStroke.kind === 'brush') {
-      const pts = activeStroke.points;
-      const prev = pts[pts.length - 1];
-      if (dist(prev.x, prev.y, x, y) < (state.brushSmoothing ? 2.4 : 0.8)) {
+      const sPt = stepStabilizer(activeStroke, x, y);
+      const prev = activeStroke.lastPt;
+      const strength01 = clamp((state.smoothingStrength ?? 75) / 100, 0.05, 1.0);
+      const minStep = state.brushSmoothing ? (1.2 + strength01 * 1.8) : 0.75;
+      if (dist(prev.x, prev.y, sPt.x, sPt.y) < minStep) {
         return { previewCanvas: null };
       }
-      pts.push({ x, y });
+
       const ctx = activeStroke.target.ctx;
       ctx.save();
       ctx.strokeStyle = activeStroke.color;
@@ -411,32 +443,34 @@
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
-      if (state.brushSmoothing && pts.length >= 2) {
-        const mid = { x: (prev.x + x) * 0.5, y: (prev.y + y) * 0.5 };
+      if (state.brushSmoothing) {
+        const mid = { x: (prev.x + sPt.x) * 0.5, y: (prev.y + sPt.y) * 0.5 };
         ctx.moveTo(activeStroke.lastMid.x, activeStroke.lastMid.y);
         ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y);
         activeStroke.lastMid = mid;
       } else {
         ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(x, y);
+        ctx.lineTo(sPt.x, sPt.y);
       }
       ctx.stroke();
       ctx.restore();
+      activeStroke.lastPt = sPt;
       return { previewCanvas: null };
     }
 
     if (activeStroke.kind === 'pencil') {
+      const sPt = stepStabilizer(activeStroke, x, y);
       drawPixelLine(
         activeStroke.target.ctx,
         activeStroke.lastX,
         activeStroke.lastY,
-        x,
-        y,
+        sPt.x,
+        sPt.y,
         activeStroke.size,
         activeStroke.color
       );
-      activeStroke.lastX = x;
-      activeStroke.lastY = y;
+      activeStroke.lastX = sPt.x;
+      activeStroke.lastY = sPt.y;
       return { previewCanvas: null };
     }
 

@@ -147,10 +147,14 @@
         <span id="label-brush-size" class="value-pill">8px</span>
       </div>
 
-      <label class="toggle-chip" id="chip-smoothing" title="Smooth out hand jitter while drawing">
-        <input type="checkbox" id="chk-smoothing" checked />
-        <span>Smooth Ink</span>
-      </label>
+      <div class="control-cluster" id="cluster-smoothing">
+        <label class="toggle-chip" id="chip-smoothing" title="Auto-smooth shaky laptop trackpad or mouse lines into clean curves">
+          <input type="checkbox" id="chk-smoothing" checked />
+          <span>✨ Auto Smooth</span>
+        </label>
+        <input type="range" id="slider-smoothing" min="10" max="100" value="75" title="Auto Line Smoothing Strength (higher = stronger correction for laptop trackpad lines)" />
+        <span id="label-smoothing" class="value-pill">75%</span>
+      </div>
 
       <div class="control-cluster hidden" id="cluster-shape-fill">
         <span class="cluster-label">Shape</span>
