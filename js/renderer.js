@@ -1,11 +1,11 @@
 // ============================================================================
-// WigglePaint — 60fps Stage Compositor, Seam-Free Mesh Warp & Vector Overlays
+// WigglePaint — 60fps Stage Compositor, Zero-Warp Puppet Renderer & Overlays
 // ============================================================================
 (function (global) {
   'use strict';
 
   const { STAGE_W, STAGE_H, state, createOffscreenCanvas, createDefaultPartTransform } = global.WPState;
-  const { solveForwardKinematics, ensurePartMesh, deformPartVertices } = global.WPRigging;
+  const { solveForwardKinematics, ensurePartMesh } = global.WPRigging;
 
   const onionScratch = createOffscreenCanvas(STAGE_W, STAGE_H);
   const onionCtx = onionScratch.getContext('2d');
@@ -24,71 +24,26 @@
     return true;
   }
 
-  // Seam-free affine triangle rasterizer
-  function drawDeformedMesh(ctx, srcCanvas, mesh) {
-    const verts = mesh.vertices;
-    const tris = mesh.triangles;
-
-    for (let i = 0; i < tris.length; i++) {
-      const tri = tris[i];
-      const v0 = verts[tri.a];
-      const v1 = verts[tri.b];
-      const v2 = verts[tri.c];
-
-      const u0 = v0.u, w0 = v0.v;
-      const u1 = v1.u, w1 = v1.v;
-      const u2 = v2.u, w2 = v2.v;
-
-      const x0 = v0.x, y0 = v0.y;
-      const x1 = v1.x, y1 = v1.y;
-      const x2 = v2.x, y2 = v2.y;
-
-      const du1 = u1 - u0, dw1 = w1 - w0;
-      const du2 = u2 - u0, dw2 = w2 - w0;
-      const det = du1 * dw2 - du2 * dw1;
-      if (Math.abs(det) < 1e-5) continue;
-
-      const invDet = 1 / det;
-      const dx1 = x1 - x0, dy1 = y1 - y0;
-      const dx2 = x2 - x0, dy2 = y2 - y0;
-
-      const a = (dx1 * dw2 - dx2 * dw1) * invDet;
-      const c = (du1 * dx2 - du2 * dx1) * invDet;
-      const e = x0 - a * u0 - c * w0;
-
-      const b = (dy1 * dw2 - dy2 * dw1) * invDet;
-      const d = (du1 * dy2 - du2 * dy1) * invDet;
-      const f = y0 - b * u0 - d * w0;
-
-      // Expand clip triangle slightly (0.8px) outward from centroid to eliminate Canvas2D AA hairline seams
-      const mx = (x0 + x1 + x2) * 0.333333;
-      const my = (y0 + y1 + y2) * 0.333333;
-
-      let ex0 = x0 - mx, ey0 = y0 - my;
-      const l0 = Math.sqrt(ex0 * ex0 + ey0 * ey0) || 1;
-      ex0 = x0 + (ex0 / l0) * 0.85;
-      ey0 = y0 + (ey0 / l0) * 0.85;
-
-      let ex1 = x1 - mx, ey1 = y1 - my;
-      const l1 = Math.sqrt(ex1 * ex1 + ey1 * ey1) || 1;
-      ex1 = x1 + (ex1 / l1) * 0.85;
-      ey1 = y1 + (ey1 / l1) * 0.85;
-
-      let ex2 = x2 - mx, ey2 = y2 - my;
-      const l2 = Math.sqrt(ex2 * ex2 + ey2 * ey2) || 1;
-      ex2 = x2 + (ex2 / l2) * 0.85;
-      ey2 = y2 + (ey2 / l2) * 0.85;
-
+  // Render Zero-Warp Rigid Puppet Pieces (sorted back-to-front with seamless joint caps!)
+  function drawPuppetPieces(ctx, pieces, fk) {
+    for (let i = 0; i < pieces.length; i++) {
+      const piece = pieces[i];
+      const bt = fk.boneTransforms.get(piece.boneId);
+      if (!bt) {
+        ctx.drawImage(piece.canvas, piece.offsetX, piece.offsetY);
+        continue;
+      }
       ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(ex0, ey0);
-      ctx.lineTo(ex1, ey1);
-      ctx.lineTo(ex2, ey2);
-      ctx.closePath();
-      ctx.clip();
-
-      ctx.transform(a, b, c, d, e, f);
-      ctx.drawImage(srcCanvas, tri.sx, tri.sy, tri.sw, tri.sh, tri.sx, tri.sy, tri.sw, tri.sh);
+      ctx.translate(bt.ax, bt.ay);
+      if (Math.abs(bt.scale - 1) > 1e-3) {
+        ctx.rotate(bt.worldAngle);
+        ctx.scale(bt.scale, 1);
+        ctx.rotate(-bt.restWorldAngle);
+      } else {
+        ctx.rotate(bt.dPhi);
+      }
+      ctx.translate(-bt.restAx, -bt.restAy);
+      ctx.drawImage(piece.canvas, piece.offsetX, piece.offsetY);
       ctx.restore();
     }
   }
@@ -140,14 +95,20 @@
           const bt = fk.boneTransforms.get(mesh.rigidBoneId);
           if (bt) {
             ctx.translate(bt.ax, bt.ay);
-            ctx.rotate(bt.dPhi);
-            ctx.scale(bt.scale, bt.scale);
+            if (Math.abs(bt.scale - 1) > 1e-3) {
+              ctx.rotate(bt.worldAngle);
+              ctx.scale(bt.scale, 1);
+              ctx.rotate(-bt.restWorldAngle);
+            } else {
+              ctx.rotate(bt.dPhi);
+            }
             ctx.translate(-bt.restAx, -bt.restAy);
           }
           ctx.drawImage(part.canvas, 0, 0);
+        } else if (mesh.mode === 'puppet' && mesh.pieces) {
+          drawPuppetPieces(ctx, mesh.pieces, fk);
         } else {
-          deformPartVertices(mesh, fk);
-          drawDeformedMesh(ctx, part.canvas, mesh);
+          ctx.drawImage(part.canvas, 0, 0);
         }
       }
 
@@ -206,18 +167,13 @@
     const e = toWorld(halfW, 0);
     const w = toWorld(-halfW, 0);
 
-    // Rotation lollipop 28px out from top edge normal
-    const topSign = sy >= 0 ? -1 : 1;
-    const rotHandle = {
-      x: n.x + (-sin * topSign) * -28,
-      y: n.y + (cos * topSign) * -28
-    };
-    // Simpler exact normal along local -Y direction:
     const upDirX = sin;
     const upDirY = -cos;
     const signY = sy >= 0 ? 1 : -1;
-    rotHandle.x = n.x + upDirX * 28 * signY;
-    rotHandle.y = n.y + upDirY * 28 * signY;
+    const rotHandle = {
+      x: n.x + upDirX * 28 * signY,
+      y: n.y + upDirY * 28 * signY
+    };
 
     return {
       cx, cy, rot, sx, sy, halfW, halfH,
@@ -239,15 +195,12 @@
       : null;
 
     if (isDraw || isRig) {
-      // Render crisp Rest Space
       renderPoseToContext(stageCtx, null, { useRestSpace: true });
 
-      // Composite live stroke/shape preview on top of active layer if drawing
       if (isDraw && uiHintState.previewCanvas) {
         stageCtx.drawImage(uiHintState.previewCanvas, 0, 0);
       }
 
-      // Draw floating selection if active in Draw mode
       if (isDraw && state.selection && state.selection.canvas) {
         const sel = state.selection;
         stageCtx.save();
@@ -259,7 +212,6 @@
         drawSelectionMarquee(overlayCtx, sel);
       }
     } else {
-      // Animate Mode: Background -> Optional Onion Skins -> Active/Tweened Pose
       stageCtx.save();
       stageCtx.fillStyle = state.stageBgColor || '#ffffff';
       stageCtx.fillRect(0, 0, STAGE_W, STAGE_H);
@@ -282,7 +234,6 @@
         }
       }
 
-      // Render active/tweened characters onto stage
       const charCanvas = uiHintState.charScratch || createOffscreenCanvas(STAGE_W, STAGE_H);
       uiHintState.charScratch = charCanvas;
       const charCtx = charCanvas.getContext('2d');
@@ -290,9 +241,7 @@
       stageCtx.drawImage(charCanvas, 0, 0);
     }
 
-    // ------------------------------------------------------------------------
-    // Vector Overlays (Cursors, Bones, Joints, Transform Gizmo)
-    // ------------------------------------------------------------------------
+    // Vector Overlays
     if (isDraw && uiHintState.cursorPos) {
       drawBrushCursor(overlayCtx, uiHintState.cursorPos);
     }
@@ -302,8 +251,8 @@
         for (const p of state.parts) {
           if (!p.visible) continue;
           const m = ensurePartMesh(p);
-          if (m.bound && m.mode === 'bendy') {
-            drawMeshWireframe(overlayCtx, m, true);
+          if (m.bound && m.zoneOverlayCanvas) {
+            overlayCtx.drawImage(m.zoneOverlayCanvas, 0, 0);
           }
         }
       }
@@ -358,7 +307,6 @@
     ctx.strokeRect(-hw, -hh, sel.w, sel.h);
     ctx.setLineDash([]);
 
-    // Corner handles
     const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]];
     for (const [cx, cy] of corners) {
       ctx.fillStyle = '#ffffff';
@@ -369,26 +317,6 @@
       ctx.fill();
       ctx.stroke();
     }
-    ctx.restore();
-  }
-
-  function drawMeshWireframe(ctx, mesh, restSpace) {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(124, 58, 237, 0.25)';
-    ctx.lineWidth = 1;
-    const verts = mesh.vertices;
-    ctx.beginPath();
-    for (const t of mesh.triangles) {
-      const a = verts[t.a], b = verts[t.b], c = verts[t.c];
-      const ax = restSpace ? a.u : a.x, ay = restSpace ? a.v : a.y;
-      const bx = restSpace ? b.u : b.x, by = restSpace ? b.v : b.y;
-      const cx = restSpace ? c.u : c.x, cy = restSpace ? c.v : c.y;
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
-      ctx.lineTo(cx, cy);
-      ctx.closePath();
-    }
-    ctx.stroke();
     ctx.restore();
   }
 
@@ -412,7 +340,6 @@
     ctx.lineTo(ax + ux * shoulder - nx * width, ay + uy * shoulder - ny * width);
     ctx.closePath();
 
-    // Outer white contrast halo
     ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
     ctx.lineWidth = 4.5;
@@ -436,7 +363,6 @@
     const isRig = state.mode === 'rig';
     const accentFill = isRig ? 'rgba(124, 58, 237, 0.38)' : 'rgba(234, 88, 12, 0.34)';
 
-    // Draw bones
     for (const b of state.bones) {
       const bt = fk.boneTransforms.get(b.id);
       if (!bt) continue;
@@ -445,7 +371,6 @@
       drawBoneShape(ctx, bt.ax, bt.ay, bt.bx, bt.by, isSel, isHov, accentFill);
     }
 
-    // Live bone creation preview in Rig Mode
     if (isRig && uiHintState.boneDragPreview) {
       const { x1, y1, x2, y2 } = uiHintState.boneDragPreview;
       drawBoneShape(ctx, x1, y1, x2, y2, false, true, 'rgba(16, 185, 129, 0.45)');
@@ -460,7 +385,6 @@
       ctx.restore();
     }
 
-    // Draw joints
     for (const j of state.joints) {
       const pos = fk.jointPositions.get(j.id) || { x: j.x, y: j.y, isRoot: true };
       const isHov = uiHintState.hoverJointId === j.id;
@@ -468,8 +392,6 @@
       const isSel = state.selectedJointId === j.id;
 
       ctx.save();
-
-      // Snap magnetic halo
       if (isSnap || isHov) {
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, isSnap ? 16 : 13, 0, Math.PI * 2);
@@ -478,7 +400,6 @@
       }
 
       if (pos.isRoot) {
-        // Diamond badge for Root Joint (draggable whole-body mover!)
         const r = isHov ? 10 : 8.5;
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y - r);
@@ -525,7 +446,6 @@
     const [nw, ne, se, sw] = g.corners;
 
     ctx.save();
-    // Bounding quad
     ctx.beginPath();
     ctx.moveTo(nw.x, nw.y);
     ctx.lineTo(ne.x, ne.y);
@@ -542,7 +462,6 @@
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Rotate stem + handle
     ctx.beginPath();
     ctx.moveTo(g.handles.n.x, g.handles.n.y);
     ctx.lineTo(g.handles.rotate.x, g.handles.rotate.y);
@@ -558,7 +477,6 @@
     ctx.strokeStyle = '#ea580c';
     ctx.stroke();
 
-    // Corner handles (Scale) & Edge handles (Squash & Stretch)
     for (const key of ['nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w']) {
       const p = g.handles[key];
       const isCorner = key.length === 2;
@@ -572,7 +490,6 @@
       ctx.stroke();
     }
 
-    // Center pivot crosshair
     ctx.beginPath();
     ctx.arc(g.cx, g.cy, 4, 0, Math.PI * 2);
     ctx.fillStyle = '#ea580c';

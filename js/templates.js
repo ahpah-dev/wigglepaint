@@ -393,21 +393,27 @@
 
     markPartDirty(dino);
 
-    // Skeleton
-    const hip = addJoint(396, 304);
-    const chest = addJoint(408, 232);
-    const head = addJoint(444, 174);
-    const tail1 = addJoint(312, 298);
-    const tail2 = addJoint(235, 255);
+    // Skeleton with anatomical hip, tail, and neck sockets!
+    const hip = addJoint(402, 316);
+    const chest = addJoint(412, 214);
+    const head = addJoint(442, 168);
+    const tailBase = addJoint(350, 311, true);
+    const tail1 = addJoint(288, 301);
+    const tail2 = addJoint(230, 253);
+    const lHip = addJoint(368, 338, true);
     const lFoot = addJoint(368, 398);
+    const rHip = addJoint(434, 338, true);
     const rFoot = addJoint(434, 398);
 
     const bBody = addLink(hip, chest);
     const bHead = addLink(chest, head);
-    const bT1 = addLink(hip, tail1);
+    addLink(hip, tailBase);
+    const bT1 = addLink(tailBase, tail1);
     const bT2 = addLink(tail1, tail2);
-    const bLF = addLink(hip, lFoot);
-    const bRF = addLink(hip, rFoot);
+    addLink(hip, lHip);
+    const bLF = addLink(lHip, lFoot);
+    addLink(hip, rHip);
+    const bRF = addLink(rHip, rFoot);
 
     recomputeRestSkeleton();
 

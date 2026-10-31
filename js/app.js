@@ -1208,8 +1208,8 @@
 
     const bindLabels = {
       auto: 'Auto Rig',
-      bendy: 'Bendy',
-      rigid: 'Rigid Cutout',
+      bendy: 'Puppet Rig',
+      rigid: '1-Bone Lock',
       none: 'Free Prop'
     };
     const bindCycle = ['auto', 'bendy', 'rigid', 'none'];
