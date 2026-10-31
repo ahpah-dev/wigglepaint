@@ -27,13 +27,14 @@
           </svg>
         </div>
         <span class="brand-name">WigglePaint</span>
+        <span class="brand-tag">Studio</span>
       </div>
 
       <div class="topbar-divider"></div>
 
       <button id="btn-new" class="ghost-btn" title="Start a fresh blank canvas">
-        <svg viewBox="0 0 20 20" width="15" height="15"><path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M12 3v4h4" fill="none" stroke="currentColor" stroke-width="1.7"/></svg>
-        New
+        <svg viewBox="0 0 20 20" width="14" height="14"><path d="M5 3h7l4 4v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 3v4h4" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>New</span>
       </button>
 
       <div class="dropdown-wrap">
@@ -97,8 +98,14 @@
     </nav>
 
     <div class="topbar-right">
-      <button id="btn-save" class="ghost-btn" title="Save editable .wiggle.json project">Save</button>
-      <button id="btn-open" class="ghost-btn" title="Open .wiggle.json project">Open</button>
+      <button id="btn-save" class="ghost-btn" title="Save editable .wiggle.json project">
+        <svg viewBox="0 0 20 20" width="14" height="14"><path d="M4 3h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M6 3v5h8V3M7 17v-6h6v6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>Save</span>
+      </button>
+      <button id="btn-open" class="ghost-btn" title="Open .wiggle.json project">
+        <svg viewBox="0 0 20 20" width="14" height="14"><path d="M2 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1H2V6z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2 9h16l-1.5 8.5A2 2 0 0 1 14.5 19h-9a2 2 0 0 1-2-1.5L2 9z" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <span>Open</span>
+      </button>
       <input type="file" id="file-open-input" accept=".json" class="hidden" />
 
       <div class="dropdown-wrap">
@@ -189,7 +196,10 @@
       </div>
 
       <div class="subbar-spacer"></div>
-      <button id="btn-clear-layer" class="mini-btn" title="Clear active Part or Backdrop">Clear Layer</button>
+      <button id="btn-clear-layer" class="mini-btn" title="Clear active Part or Backdrop">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M2 4h12M5 4V2.5A1.5 1.5 0 0 1 6.5 1h3A1.5 1.5 0 0 1 11 2.5V4m2 0v9.5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5V4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Clear Layer</span>
+      </button>
     </div>
 
     <!-- RIG OPTIONS -->
@@ -239,7 +249,10 @@
       <button data-motion="walk" class="magic-pill coral" title="Generate a jaunty walk / bounce cycle">🚶 Walk</button>
 
       <div class="subbar-spacer"></div>
-      <button id="btn-reset-pose" class="mini-btn" title="Reset current pose back to neutral rest pose">Reset Pose</button>
+      <button id="btn-reset-pose" class="mini-btn" title="Reset current pose back to neutral rest pose">
+        <svg viewBox="0 0 16 16" width="12" height="12"><path d="M2.5 2.5v4h4M2.8 6.5A5.5 5.5 0 1 1 3.5 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <span>Reset Pose</span>
+      </button>
     </div>
   </section>
 
@@ -346,7 +359,10 @@
     <aside class="right-dock">
       <div class="dock-header-row">
         <span class="dock-section-title" style="margin:0">Parts</span>
-        <button id="btn-add-part" class="mini-add-btn" title="Add a separate drawing Part (e.g. prop, ball, hat)">+ Part</button>
+        <button id="btn-add-part" class="mini-add-btn" title="Add a separate drawing Part (e.g. prop, ball, hat)">
+          <svg viewBox="0 0 14 14" width="11" height="11"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          <span>Part</span>
+        </button>
       </div>
       <p class="dock-hint">Draw everything on 1 part for bendy rigging, or add parts for separate objects!</p>
 
