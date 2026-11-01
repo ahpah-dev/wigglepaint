@@ -63,14 +63,15 @@
     return j;
   }
 
-  function addLink(j1, j2) {
+  function addLink(j1, j2, role = null) {
     const b = {
       id: uid('bone'),
       parentJointId: j1.id,
       childJointId: j2.id,
       restLength: dist(j1.x, j1.y, j2.x, j2.y),
       restWorldAngle: 0,
-      restLocalAngle: 0
+      restLocalAngle: 0,
+      role
     };
     state.bones.push(b);
     return b;
@@ -235,20 +236,20 @@
     const rKnee = addJoint(429, 348);
     const rFoot = addJoint(434, 400);
 
-    const bSpine = addLink(pelvis, chest);
-    const bHead = addLink(chest, head);
-    addLink(chest, lShoulder);
-    const bLUA = addLink(lShoulder, lElbow);
-    const bLFA = addLink(lElbow, lHand);
-    addLink(chest, rShoulder);
-    const bRUA = addLink(rShoulder, rElbow);
-    const bRFA = addLink(rElbow, rHand);
-    addLink(pelvis, lHip);
-    const bLThigh = addLink(lHip, lKnee);
-    const bLShin = addLink(lKnee, lFoot);
-    addLink(pelvis, rHip);
-    const bRThigh = addLink(rHip, rKnee);
-    const bRShin = addLink(rKnee, rFoot);
+    const bSpine = addLink(pelvis, chest, 'spine');
+    const bHead = addLink(chest, head, 'head');
+    addLink(chest, lShoulder, 'collar');
+    const bLUA = addLink(lShoulder, lElbow, 'arm');
+    const bLFA = addLink(lElbow, lHand, 'hand');
+    addLink(chest, rShoulder, 'collar');
+    const bRUA = addLink(rShoulder, rElbow, 'arm');
+    const bRFA = addLink(rElbow, rHand, 'hand');
+    addLink(pelvis, lHip, 'pelvis');
+    const bLThigh = addLink(lHip, lKnee, 'leg');
+    const bLShin = addLink(lKnee, lFoot, 'foot');
+    addLink(pelvis, rHip, 'pelvis');
+    const bRThigh = addLink(rHip, rKnee, 'leg');
+    const bRShin = addLink(rKnee, rFoot, 'foot');
 
     recomputeRestSkeleton();
 
@@ -405,15 +406,15 @@
     const rHip = addJoint(434, 338, true);
     const rFoot = addJoint(434, 398);
 
-    const bBody = addLink(hip, chest);
-    const bHead = addLink(chest, head);
-    addLink(hip, tailBase);
-    const bT1 = addLink(tailBase, tail1);
-    const bT2 = addLink(tail1, tail2);
-    addLink(hip, lHip);
-    const bLF = addLink(lHip, lFoot);
-    addLink(hip, rHip);
-    const bRF = addLink(rHip, rFoot);
+    const bBody = addLink(hip, chest, 'spine');
+    const bHead = addLink(chest, head, 'head');
+    addLink(hip, tailBase, 'trunk');
+    const bT1 = addLink(tailBase, tail1, 'trunk');
+    const bT2 = addLink(tail1, tail2, 'trunk');
+    addLink(hip, lHip, 'pelvis');
+    const bLF = addLink(lHip, lFoot, 'foot');
+    addLink(hip, rHip, 'pelvis');
+    const bRF = addLink(rHip, rFoot, 'foot');
 
     recomputeRestSkeleton();
 

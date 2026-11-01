@@ -111,8 +111,49 @@
   }
 
   // --------------------------------------------------------------------------
-  // Hit-Testing Joints & Bones
+  // Hit-Testing Joints & Bones & Semantic Role Classification
   // --------------------------------------------------------------------------
+  function classifyBoneRole(bone, bounds = null) {
+    if (bone && bone.role) return bone.role;
+    const jointMap = new Map(state.joints.map((j) => [j.id, j]));
+    const pj = jointMap.get(bone.parentJointId);
+    const cj = jointMap.get(bone.childJointId);
+    if (!pj || !cj) return 'trunk';
+
+    const b = bounds || (state.parts[0] && state.parts[0].bounds ? state.parts[0].bounds : null);
+    if (!b) return 'trunk';
+
+    const midX = (pj.x + cj.x) * 0.5;
+    const midY = (pj.y + cj.y) * 0.5;
+    const cx = b.cx !== undefined ? b.cx : (b.minX !== undefined && b.maxX !== undefined ? (b.minX + b.maxX) * 0.5 : (b.x + b.w * 0.5));
+    const top = b.top !== undefined ? b.top : (b.minY !== undefined ? b.minY : (b.y || 0));
+    const h = b.h || 100;
+    const w = b.w || 100;
+
+    // Head bone detection: upper ~40% of silhouette, near horizontal center, or child points upward
+    const isUpper = midY < top + h * 0.40 || cj.y < top + h * 0.28;
+    const isCentered = Math.abs(midX - cx) < w * 0.32;
+    const pointsUp = cj.y <= pj.y + 12;
+
+    if (isUpper && isCentered && (pointsUp || cj.y < top + h * 0.22)) {
+      return 'head';
+    }
+
+    // Upper lateral or extremities -> arm / hand
+    if (midY < top + h * 0.68 && Math.abs(midX - cx) > w * 0.20) {
+      const isLeaf = !state.bones.some((ob) => ob.parentJointId === cj.id && ob.id !== bone.id);
+      return isLeaf ? 'hand' : 'arm';
+    }
+
+    // Lower body -> leg / foot
+    if (midY > top + h * 0.55) {
+      const isLeaf = !state.bones.some((ob) => ob.parentJointId === cj.id && ob.id !== bone.id);
+      return isLeaf ? 'foot' : 'leg';
+    }
+
+    return 'trunk';
+  }
+
   function findJointAt(x, y, pose = null, radius = 15) {
     const fk = solveForwardKinematics(pose);
     let best = null;
@@ -204,7 +245,8 @@
       childJointId: endJoint.id,
       restLength: dist(startJoint.x, startJoint.y, endJoint.x, endJoint.y),
       restWorldAngle: 0,
-      restLocalAngle: 0
+      restLocalAngle: 0,
+      role: classifyBoneRole({ parentJointId: startJoint.id, childJointId: endJoint.id })
     };
     state.bones.push(bone);
     recomputeRestSkeleton();
@@ -322,15 +364,18 @@
       state.joints.push(j);
       return j;
     }
-    function link(j1, j2) {
-      state.bones.push({
+    function link(j1, j2, role = null) {
+      const b = {
         id: uid('bone'),
         parentJointId: j1.id,
         childJointId: j2.id,
         restLength: dist(j1.x, j1.y, j2.x, j2.y),
         restWorldAngle: 0,
-        restLocalAngle: 0
-      });
+        restLocalAngle: 0,
+        role: role || 'trunk'
+      };
+      state.bones.push(b);
+      return b;
     }
 
     if (kind === 'biped') {
@@ -433,28 +478,28 @@
       const rKnee = mkJoint(kneeBandR ? kneeBandR.x : (rHip.x + rFootX) * 0.5, kneeBandR ? kneeBandR.y : top + h * 0.76);
       const rFoot = mkJoint(rFootX, rFootY);
 
-      link(pelvis, chest);
-      link(chest, head);
-      link(chest, lShoulder);
-      link(lShoulder, lElbow);
-      link(lElbow, lHand);
-      link(chest, rShoulder);
-      link(rShoulder, rElbow);
-      link(rElbow, rHand);
-      link(pelvis, lHip);
-      link(lHip, lKnee);
-      link(lKnee, lFoot);
-      link(pelvis, rHip);
-      link(rHip, rKnee);
-      link(rKnee, rFoot);
+      link(pelvis, chest, 'spine');
+      link(chest, head, 'head');
+      link(chest, lShoulder, 'shoulder');
+      link(lShoulder, lElbow, 'arm');
+      link(lElbow, lHand, 'hand');
+      link(chest, rShoulder, 'shoulder');
+      link(rShoulder, rElbow, 'arm');
+      link(rElbow, rHand, 'hand');
+      link(pelvis, lHip, 'hip');
+      link(lHip, lKnee, 'leg');
+      link(lKnee, lFoot, 'foot');
+      link(pelvis, rHip, 'hip');
+      link(rHip, rKnee, 'leg');
+      link(rKnee, rFoot, 'foot');
     } else if (kind === 'bounce_spine') {
       const base = mkJoint(cx, top + h * 0.88);
       const mid1 = mkJoint(cx, top + h * 0.64);
       const mid2 = mkJoint(cx, top + h * 0.38);
       const tip = mkJoint(cx, top + h * 0.12);
-      link(base, mid1);
-      link(mid1, mid2);
-      link(mid2, tip);
+      link(base, mid1, 'spine');
+      link(mid1, mid2, 'spine');
+      link(mid2, tip, 'head');
     } else if (kind === 'quad') {
       const hip = mkJoint(cx - w * 0.14, top + h * 0.52);
       const shoulder = mkJoint(cx + w * 0.12, top + h * 0.45);
@@ -464,12 +509,12 @@
       const bFoot = mkJoint(cx - w * 0.16, top + h * 0.90);
       const fFoot = mkJoint(cx + w * 0.14, top + h * 0.90);
 
-      link(hip, shoulder);
-      link(shoulder, head);
-      link(hip, tailMid);
-      link(tailMid, tailTip);
-      link(hip, bFoot);
-      link(shoulder, fFoot);
+      link(hip, shoulder, 'spine');
+      link(shoulder, head, 'head');
+      link(hip, tailMid, 'tail');
+      link(tailMid, tailTip, 'tail');
+      link(hip, bFoot, 'leg');
+      link(shoulder, fFoot, 'leg');
     }
 
     recomputeRestSkeleton();
@@ -516,6 +561,11 @@
       if (!incBone) break;
       const cJoint = jointMap.get(incBone.childJointId);
       if (cJoint && cJoint.pinned && incBone.parentBoneId) break;
+
+      // Smart IK Head Protection: Never allow a limb/hand drag to pull or rotate the head!
+      const role = incBone.role || classifyBoneRole(incBone);
+      if (role === 'head') break;
+
       chain.push(incBone);
 
       const parentJoint = jointMap.get(incBone.parentJointId);
@@ -848,9 +898,14 @@
         const cj = jointMap.get(b.childJointId);
         if (!pj || !cj) continue;
         activeIdxById.set(b.id, activeBones.length);
+        const role = b.role || classifyBoneRole(b, part.bounds);
         activeBones.push({
           bone: b,
           id: b.id,
+          role,
+          isHead: role === 'head',
+          isHand: role === 'hand',
+          isLimb: role === 'hand' || role === 'arm' || role === 'leg' || role === 'foot',
           ax: pj.x,
           ay: pj.y,
           bx: cj.x,
@@ -935,8 +990,19 @@
       return part.mesh;
     }
 
-    // If there is only 1 active bone, the whole Part moves 100% rigidly with that bone!
+    // If there is only 1 active bone:
+    // Check if the single bone covers the entire Part or is a local limb/hand!
+    let isSingleBoneRigid = false;
     if (activeBones.length === 1) {
+      const ab = activeBones[0];
+      const boneSpan = dist(ab.ax, ab.ay, ab.bx, ab.by);
+      const partDiag = Math.hypot(part.bounds.w, part.bounds.h);
+      if (partDiag < 80 || (boneSpan >= partDiag * 0.65 && !ab.isHand)) {
+        isSingleBoneRigid = true;
+      }
+    }
+
+    if (isSingleBoneRigid) {
       part.mesh = { bound: true, mode: 'rigid', rigidBoneId: activeBones[0].id };
       return part.mesh;
     }
@@ -949,7 +1015,7 @@
     for (let i = 0; i < activeBones.length; i++) {
       const ab = activeBones[i];
       const samples = [];
-      for (const t of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+      for (const t of [0.15, 0.3, 0.5, 0.7, 0.85]) {
         const sx = ab.ax + (ab.bx - ab.ax) * t;
         const sy = ab.ay + (ab.by - ab.ay) * t;
         const gx = clamp(Math.floor(sx / GRID_STEP), 0, gw - 1);
@@ -976,18 +1042,79 @@
       }
     }
 
-    // Build Inscribed Volumetric Disks for thick Body/Head bones (radius >= 20px) so thin limbs
-    // NEVER steal chunks out of a fat ribcage, waist, or round belly!
+    const STATIC_ANCHOR_IDX = -99;
+
+    // Detect Head Region in drawing
+    let headCenter = null;
+    let headRadius = 0;
+    const hgx0 = Math.max(0, Math.floor(part.bounds.x / GRID_STEP));
+    const hgx1 = Math.min(gw - 1, Math.ceil((part.bounds.x + part.bounds.w) / GRID_STEP));
+    const hgy0 = Math.max(0, Math.floor(part.bounds.y / GRID_STEP));
+    const hgy1 = Math.min(gh - 1, Math.ceil((part.bounds.y + part.bounds.h * 0.38) / GRID_STEP));
+    let maxHeadDT = 0;
+    let bestHeadGX = 0, bestHeadGY = 0;
+
+    for (let gy = hgy0; gy <= hgy1; gy++) {
+      for (let gx = hgx0; gx <= hgx1; gx++) {
+        const dtVal = distTrans[gy * gw + gx];
+        if (dtVal > maxHeadDT) {
+          maxHeadDT = dtVal;
+          bestHeadGX = gx;
+          bestHeadGY = gy;
+        }
+      }
+    }
+    if (maxHeadDT >= 7) {
+      headCenter = { x: bestHeadGX * GRID_STEP + 1, y: bestHeadGY * GRID_STEP + 1 };
+      headRadius = maxHeadDT;
+    }
+
+    let headBoneIdx = activeBones.findIndex((ab) => ab.isHead);
+    if (headBoneIdx < 0 && headCenter) {
+      for (let i = 0; i < activeBones.length; i++) {
+        const ab = activeBones[i];
+        const dChild = dist(ab.bx, ab.by, headCenter.x, headCenter.y);
+        const dParent = dist(ab.ax, ab.ay, headCenter.x, headCenter.y);
+        if (dChild <= headRadius * 1.3 || dParent <= headRadius * 0.8) {
+          headBoneIdx = i;
+          ab.isHead = true;
+          ab.role = 'head';
+          break;
+        }
+      }
+    }
+
     const maxBodyR = Math.max(...boneRadius);
     const thickBoneIndices = [];
     const bodyDisks = []; // [{ x, y, r, ownerIdx }]
+
     for (let i = 0; i < activeBones.length; i++) {
-      // A bone is volumetric core if it's thick (>= 20px) and at least 55% of the thickest body part
-      if (boneRadius[i] >= 20 && boneRadius[i] >= maxBodyR * 0.52) {
+      const ab = activeBones[i];
+      if (ab.isHand || (ab.isLimb && !ab.isHead)) continue;
+
+      if (i === headBoneIdx) {
         thickBoneIndices.push(i);
-        const ab = activeBones[i];
+        if (headCenter) {
+          bodyDisks.push({ x: headCenter.x, y: headCenter.y, r: headRadius * 0.96, ownerIdx: i });
+        }
         for (const seg of ab.segments) {
-          if (!seg.isPrimary) continue; // Sample strictly along central spine/head axis so disks don't spill past sockets into limbs!
+          const steps = 8;
+          for (let k = 0; k <= steps; k++) {
+            const t = k / steps;
+            const sx = seg.ax + (seg.bx - seg.ax) * t;
+            const sy = seg.ay + (seg.by - seg.ay) * t;
+            const gx = clamp(Math.floor(sx / GRID_STEP), 0, gw - 1);
+            const gy = clamp(Math.floor(sy / GRID_STEP), 0, gh - 1);
+            const rLocal = Math.min(distTrans[gy * gw + gx], Math.max(headRadius, boneRadius[i] * 1.35));
+            if (rLocal >= 8) {
+              bodyDisks.push({ x: sx, y: sy, r: rLocal * 0.94, ownerIdx: i });
+            }
+          }
+        }
+      } else if (boneRadius[i] >= 14 && boneRadius[i] >= maxBodyR * 0.38) {
+        thickBoneIndices.push(i);
+        for (const seg of ab.segments) {
+          if (!seg.isPrimary) continue;
           const steps = 10;
           for (let k = 0; k <= steps; k++) {
             const t = k / steps;
@@ -996,12 +1123,17 @@
             const gx = clamp(Math.floor(sx / GRID_STEP), 0, gw - 1);
             const gy = clamp(Math.floor(sy / GRID_STEP), 0, gh - 1);
             const rLocal = Math.min(distTrans[gy * gw + gx], boneRadius[i] * 1.32);
-            if (rLocal >= 12) {
+            if (rLocal >= 10) {
               bodyDisks.push({ x: sx, y: sy, r: rLocal * 0.96, ownerIdx: i });
             }
           }
         }
       }
+    }
+
+    // If no head bone exists, protect unrigged head with STATIC ANCHOR disks
+    if (headBoneIdx < 0 && headCenter) {
+      bodyDisks.push({ x: headCenter.x, y: headCenter.y, r: headRadius * 0.96, ownerIdx: STATIC_ANCHOR_IDX });
     }
 
     // Multi-Source Geodesic Voronoi strictly through painted silhouette!
@@ -1022,25 +1154,28 @@
         // 1. Check Volumetric Body/Head Core first!
         if (bodyDisks.length > 0) {
           let insideCore = false;
+          let matchedOwner = -1;
           for (let d = 0; d < bodyDisks.length; d++) {
             const dk = bodyDisks[d];
             if ((cx - dk.x) * (cx - dk.x) + (cy - dk.y) * (cy - dk.y) <= dk.r * dk.r) {
               insideCore = true;
+              matchedOwner = dk.ownerIdx;
               break;
             }
           }
           if (insideCore) {
-            // Partition cleanly among competing thick core bones (e.g. Torso vs Head at the neck!)
-            let bestCoreIdx = thickBoneIndices[0];
-            let bestCoreD = Infinity;
-            for (const ti of thickBoneIndices) {
-              const d = distToActiveBone(activeBones[ti], cx, cy).dist;
-              if (d < bestCoreD) {
-                bestCoreD = d;
-                bestCoreIdx = ti;
+            let winCoreIdx = matchedOwner;
+            if (matchedOwner >= 0 && thickBoneIndices.length > 1) {
+              let bestCoreD = Infinity;
+              for (const ti of thickBoneIndices) {
+                const d = distToActiveBone(activeBones[ti], cx, cy).dist;
+                if (d < bestCoreD) {
+                  bestCoreD = d;
+                  winCoreIdx = ti;
+                }
               }
             }
-            ownerGrid[idx] = bestCoreIdx;
+            ownerGrid[idx] = winCoreIdx;
             coreLocked[idx] = 1;
             bestDist[idx] = 0;
             queue.push(idx);
@@ -1053,6 +1188,19 @@
         let winIdx = -1;
         for (let i = 0; i < activeBones.length; i++) {
           const ab = activeBones[i];
+
+          // Smart Hand & Limb Protection: Hand bones cannot seed inside the head zone!
+          if (ab.isHand || (ab.isLimb && !ab.isHead)) {
+            if (headCenter) {
+              const dToHead = dist(cx, cy, headCenter.x, headCenter.y);
+              if (dToHead < headRadius + 4) continue;
+            }
+            const ux = Math.cos(ab.angle);
+            const uy = Math.sin(ab.angle);
+            const proj = (cx - ab.ax) * ux + (cy - ab.ay) * uy;
+            if (proj < -Math.max(6, boneRadius[i] * 0.6)) continue;
+          }
+
           const pIdx = parentActiveIdx[i];
           if (pIdx >= 0 && boneRadius[pIdx] > boneRadius[i] * 1.35) {
             // Do not seed a narrow limb while still deep inside a fat parent body silhouette!
@@ -1100,6 +1248,27 @@
         if (!alphaGrid[v] || coreLocked[v]) continue;
         const nd = curD + dirs[d][2];
         if (nd + 0.05 < bestDist[v]) {
+          // Smart Hand & Limb Protection during propagation: enforce reach limit and head barrier!
+          if (own >= 0 && own < activeBones.length) {
+            const ab = activeBones[own];
+            if (ab.isHand || (ab.isLimb && !ab.isHead)) {
+              const maxReach = ab.bone.restLength * 1.6 + boneRadius[own] * 2.2 + 20;
+              if (nd > maxReach) continue;
+
+              const vcx = nx * GRID_STEP + 1;
+              const vcy = ny * GRID_STEP + 1;
+              if (headCenter) {
+                const dToHead = dist(vcx, vcy, headCenter.x, headCenter.y);
+                if (dToHead < headRadius + 4) continue;
+              }
+
+              const bux = Math.cos(ab.angle);
+              const buy = Math.sin(ab.angle);
+              const bProj = (vcx - ab.ax) * bux + (vcy - ab.ay) * buy;
+              if (bProj < -Math.max(8, boneRadius[own] * 0.8)) continue;
+            }
+          }
+
           bestDist[v] = nd;
           ownerGrid[v] = own;
           queue.push(v);
@@ -1128,7 +1297,13 @@
           const cy = uy * GRID_STEP + 1;
 
           for (let i = 0; i < activeBones.length; i++) {
-            const bd = distToActiveBone(activeBones[i], cx, cy).dist;
+            const ab = activeBones[i];
+            let bd = distToActiveBone(ab, cx, cy).dist;
+            // If this island is in the head region, heavily penalize hand bones and favor head!
+            if (headCenter && dist(cx, cy, headCenter.x, headCenter.y) < headRadius * 1.5) {
+              if (ab.isHead) bd *= 0.2;
+              else if (ab.isHand || ab.isLimb) bd += 2000;
+            }
             if (bd < closestDist) {
               closestDist = bd;
               closestBone = i;
@@ -1144,6 +1319,16 @@
               ownerGrid[v] = -2;
               comp.push(v);
             }
+          }
+        }
+
+        // If no head bone exists, islands near headCenter belong to static anchor!
+        if (headBoneIdx < 0 && headCenter && comp.length > 0) {
+          const u0 = comp[0];
+          const cx0 = (u0 % gw) * GRID_STEP + 1;
+          const cy0 = ((u0 / gw) | 0) * GRID_STEP + 1;
+          if (dist(cx0, cy0, headCenter.x, headCenter.y) < headRadius * 1.5) {
+            closestBone = STATIC_ANCHOR_IDX;
           }
         }
 
@@ -1406,6 +1591,89 @@
       });
     }
 
+    // Static Base piece: if the user only rigged a limb/hand or partial skeleton,
+    // all unassigned / static anchor pixels remain anchored at rest as a stable body piece!
+    let sMinX = STAGE_W, sMinY = STAGE_H, sMaxX = -1, sMaxY = -1;
+    let staticPixelCount = 0;
+    for (let gy = gy0; gy <= gy1; gy++) {
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const own = ownerGrid[gy * gw + gx];
+        if (own < 0 || own === STATIC_ANCHOR_IDX) {
+          const px0 = gx * GRID_STEP;
+          const py0 = gy * GRID_STEP;
+          for (let dy = 0; dy < GRID_STEP && py0 + dy < STAGE_H; dy++) {
+            const py = py0 + dy;
+            for (let dx = 0; dx < GRID_STEP && px0 + dx < STAGE_W; dx++) {
+              const px = px0 + dx;
+              const off = (py * STAGE_W + px) * 4;
+              if (imgData[off + 3] > 20) {
+                if (px < sMinX) sMinX = px;
+                if (px > sMaxX) sMaxX = px;
+                if (py < sMinY) sMinY = py;
+                if (py > sMaxY) sMaxY = py;
+                staticPixelCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (staticPixelCount > 0 && sMaxX >= sMinX && sMaxY >= sMinY) {
+      sMinX = clamp(sMinX - 2, 0, STAGE_W);
+      sMinY = clamp(sMinY - 2, 0, STAGE_H);
+      sMaxX = clamp(sMaxX + 2, 0, STAGE_W);
+      sMaxY = clamp(sMaxY + 2, 0, STAGE_H);
+      const spw = sMaxX - sMinX + 1;
+      const sph = sMaxY - sMinY + 1;
+      const sPieceCanvas = createOffscreenCanvas(spw, sph);
+      const spctx = sPieceCanvas.getContext('2d');
+      const spImg = spctx.createImageData(spw, sph);
+      const spd = spImg.data;
+
+      for (let py = sMinY; py <= sMaxY; py++) {
+        const gy = Math.floor(py / GRID_STEP);
+        for (let px = sMinX; px <= sMaxX; px++) {
+          const off = (py * STAGE_W + px) * 4;
+          const a = imgData[off + 3];
+          if (a <= 0) continue;
+          const gx = Math.floor(px / GRID_STEP);
+          const own = ownerGrid[gy * gw + gx];
+          const lx = px - sMinX;
+          const ly = py - sMinY;
+          const spOff = (ly * spw + lx) * 4;
+
+          if (own < 0 || own === STATIC_ANCHOR_IDX) {
+            spd[spOff] = imgData[off];
+            spd[spOff + 1] = imgData[off + 1];
+            spd[spOff + 2] = imgData[off + 2];
+            spd[spOff + 3] = a;
+          } else {
+            // Under-bleed 2px under neighbor rigged pieces to avoid seam gaps at boundary
+            const dist = hingeDistGrid[gy * gw + gx];
+            if (dist <= 2.2) {
+              spd[spOff] = imgData[off];
+              spd[spOff + 1] = imgData[off + 1];
+              spd[spOff + 2] = imgData[off + 2];
+              spd[spOff + 3] = a;
+            }
+          }
+        }
+      }
+      spctx.putImageData(spImg, 0, 0);
+
+      pieces.push({
+        boneId: null, // null boneId means rendered stably at rest offset in drawPuppetPieces!
+        zOrder: 15,
+        canvas: sPieceCanvas,
+        offsetX: sMinX,
+        offsetY: sMinY,
+        w: spw,
+        h: sph,
+        tint: [148, 163, 184] // Slate tint for static anchor
+      });
+    }
+
     // Sort pieces back-to-front by zOrder!
     pieces.sort((a, b) => a.zOrder - b.zOrder);
 
@@ -1419,8 +1687,16 @@
       for (let gy = gy0; gy <= gy1; gy++) {
         for (let gx = gx0; gx <= gx1; gx++) {
           const own = ownerGrid[gy * gw + gx];
-          if (own < 0) continue;
-          const tint = ZONE_TINTS[own % ZONE_TINTS.length];
+          let tint = null;
+          let alpha = 105;
+          if (own >= 0 && own < activeBones.length) {
+            tint = ZONE_TINTS[own % ZONE_TINTS.length];
+          } else if (own === STATIC_ANCHOR_IDX || (staticPixelCount > 0 && own < 0)) {
+            tint = [148, 163, 184];
+            alpha = 75;
+          } else {
+            continue;
+          }
           for (let dy = 0; dy < GRID_STEP; dy++) {
             const py = gy * GRID_STEP + dy;
             if (py >= STAGE_H) continue;
@@ -1432,7 +1708,7 @@
                 zd[off] = tint[0];
                 zd[off + 1] = tint[1];
                 zd[off + 2] = tint[2];
-                zd[off + 3] = 105;
+                zd[off + 3] = alpha;
               }
             }
           }
